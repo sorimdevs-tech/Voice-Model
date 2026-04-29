@@ -1,7 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import rehypeSanitize, { defaultSchema } from 'rehype-sanitize';
 import { 
   HiMicrophone, HiOutlineClipboardCopy, HiOutlineThumbUp, HiOutlineThumbDown, 
   HiCheck, HiOutlineRefresh, HiOutlinePencilAlt, HiOutlineX
@@ -9,6 +8,7 @@ import {
 import { toast } from 'react-hot-toast';
 
 import UserAvatar from './UserAvatar';
+import DashboardResponse from './DashboardResponse';
 
 /**
  * Strict message schema expected:
@@ -151,21 +151,49 @@ export default function MessageBubble({ message, onRetry, onRegenerate, onEdit, 
             <div className={`prose-gold overflow-x-auto ${isError ? 'text-red-400' : ''}`}>
               <ReactMarkdown
                 remarkPlugins={[remarkGfm]}
-                rehypePlugins={[
-                  [rehypeSanitize, {
-                    ...defaultSchema,
-                    tagNames: [
-                      ...(defaultSchema.tagNames || []),
-                      'table', 'thead', 'tbody', 'tr', 'th', 'td', 'code', 'pre', 'a',
-                    ],
-                  }],
-                ]}
                 components={{
                   table: ({ node, ...props }) => (
                     <div className="table-glass">
                       <table {...props} />
                     </div>
                   ),
+                  pre({ node, children, ...props }) {
+                    // Bypass <pre> formatting if the inner code is our HTML dashboard
+                    const codeNode = node?.children?.[0];
+                    if (codeNode && codeNode.tagName === 'code') {
+                      const text = (codeNode.children || []).map(child => child.value || '').join('');
+                      if (text.includes('<!DOCTYPE html>')) {
+                        return <div className="dashboard-container">{children}</div>;
+                      }
+                    }
+                    return <pre {...props}>{children}</pre>;
+                  },
+                  code({ node, inline, className, children, ...props }) {
+                    const match = /language-(\w+)/.exec(className || '');
+                    
+                    // Safely extract raw text from AST node instead of React children array
+                    let textContent = '';
+                    if (node && node.children) {
+                      textContent = node.children.map(child => child.value || '').join('');
+                    } else if (typeof children === 'string') {
+                      textContent = children;
+                    } else if (Array.isArray(children)) {
+                      textContent = children.map(child => typeof child === 'string' ? child : '').join('');
+                    }
+                    
+                    if (!inline && (match?.[1] === 'html' || textContent.includes('<!DOCTYPE html>'))) {
+                      return (
+                        <div className="w-full bg-white rounded-xl overflow-hidden my-4 border border-gold/[0.3] shadow-lg animate-fade-in-scale" style={{ height: '650px', maxWidth: '1000px', display: 'block' }}>
+                          <iframe
+                            srcDoc={textContent}
+                            style={{ width: '100%', height: '100%', border: 'none', display: 'block' }}
+                            title="Dashboard Response"
+                          />
+                        </div>
+                      );
+                    }
+                    return <code className={className} {...props}>{children}</code>;
+                  }
                 }}
               >
                 {content || ''}

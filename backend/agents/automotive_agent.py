@@ -298,12 +298,30 @@ def build_deterministic_response(df: pd.DataFrame, structured_data: dict) -> str
 
     summary = f"### Summary\n{summary_text}"
 
-    # ── Build Data Table ──
+    # ── Build Dashboard JSON ──
     if df.empty:
         return f"{summary}\n\nNo data available for this selection."
 
     headers = [str(col).replace("_", " ").title() for col in df.columns]
     rows = []
+    
+    # We will build some dummy KPIs based on the total values if available
+    kpis = []
+    if "total_sum" in locals() and total_sum > 0:
+         kpis.append({
+             "icon": "◎",
+             "iconClass": "icon-teal",
+             "label": f"Total {metric}<br>{used_time}",
+             "value": format_val(total_sum, metric_raw)
+         })
+    elif val is not None and not structured_data.get("group_by"):
+         kpis.append({
+             "icon": "◎",
+             "iconClass": "icon-teal",
+             "label": f"Total {metric}<br>{used_time}",
+             "value": format_val(val, metric_raw)
+         })
+
     for _, row in df.iterrows():
         formatted_row = []
         for i, item in enumerate(row):
@@ -312,11 +330,61 @@ def build_deterministic_response(df: pd.DataFrame, structured_data: dict) -> str
                 formatted_row.append(format_val(item, col_name))
             else:
                 formatted_row.append(str(item))
-        rows.append("| " + " | ".join(formatted_row) + " |")
+        rows.append(formatted_row)
 
-    table_md = "| " + " | ".join(headers) + " |" + "\n" + "|" + "---|" * len(headers) + "\n" + "\n".join(rows)
-
-    return f"{summary}\n\n### Data Breakdown\n{table_md}"
+    dashboard_data = {
+        "kpis": kpis,
+        "table": {
+            "title": f"Data Breakdown: {metric} ({used_time})",
+            "headers": headers,
+            "rows": rows
+        }
+    }
+    
+    # ── Inject into dashboard_template.html ──
+    try:
+        from pathlib import Path
+        import re
+        template_path = Path(__file__).parent.parent / "templates" / "dashboard_template.html"
+        with open(template_path, "r", encoding="utf-8") as f:
+            html = f.read()
+            
+        # Replace Top Title
+        title = dashboard_data["table"]["title"]
+        html = re.sub(r'<span class="topbar-title">.*?</span>', f'<span class="topbar-title">{title}</span>', html, count=1)
+        
+        # Replace KPIs
+        if kpis:
+            kpi_html = '<div class="kpi-strip">\n'
+            for k in kpis:
+                kpi_html += f'''    <div class="kpi-card">
+      <div class="kpi-header">
+        <div class="kpi-icon {k.get('iconClass', 'icon-blue')}">{k.get('icon', '◎')}</div>
+        <div class="kpi-label">{k.get('label', '')}</div>
+      </div>
+      <div class="kpi-value">{k.get('value', '')}</div>
+    </div>\n'''
+            kpi_html += '  </div>'
+            html = re.sub(r'<div class="kpi-strip">.*?</div>\s*<!-- LEFT COLUMN -->', f'{kpi_html}\n\n  <!-- LEFT COLUMN -->', html, flags=re.DOTALL)
+            
+        # Replace Table
+        table_html = '<table class="dept-table">\n        <thead>\n          <tr>\n'
+        for h in headers:
+            table_html += f'            <th>{h}</th>\n'
+        table_html += '          </tr>\n        </thead>\n        <tbody>\n'
+        for row in rows:
+            table_html += '          <tr>\n'
+            for cell in row:
+                table_html += f'            <td>{cell}</td>\n'
+            table_html += '          </tr>\n'
+        table_html += '        </tbody>\n      </table>'
+        html = re.sub(r'<table class="dept-table">.*?</table>', table_html, html, flags=re.DOTALL)
+        
+        return f"{summary}\n\n```html\n{html}\n```"
+    except Exception as e:
+        logger.error(f"Failed to inject dashboard template: {e}")
+        dashboard_json = json.dumps(dashboard_data, indent=2)
+        return f"{summary}\n\n```dashboard\n{dashboard_json}\n```"
 
 
 def validate_numbers_enforce(text: str, df: pd.DataFrame) -> bool:
