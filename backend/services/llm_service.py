@@ -11,7 +11,7 @@ import logging
 from typing import AsyncGenerator
 
 from groq import Groq, AsyncGroq
-from config import GROQ_API_KEY, PRIMARY_MODEL, FALLBACK_MODEL, SYSTEM_PROMPT
+from config import GROQ_API_KEY, PRIMARY_MODEL, FALLBACK_MODEL, SYSTEM_PROMPT, LLM_GUARDRAILS
 
 logger = logging.getLogger("voxa.llm")
 
@@ -88,6 +88,37 @@ def generate_response(
             raise
 
 
+def generate_explanation(
+    user_query: str,
+    result_context: str,
+    data_context: str = "",
+    conversation_history: list[dict] | None = None,
+    model: str | None = None,
+) -> str:
+    client = _get_sync_client()
+    target_model = model or PRIMARY_MODEL
+    messages = _build_explanation_messages(user_query, result_context, data_context, conversation_history)
+
+    try:
+        response = client.chat.completions.create(
+            model=target_model,
+            messages=messages,
+            temperature=0.3,
+            max_tokens=2048,
+            top_p=0.9,
+        )
+        return response.choices[0].message.content
+    except Exception as e:
+        if target_model == PRIMARY_MODEL:
+            logger.warning(f"Primary model ({PRIMARY_MODEL}) failed: {e}. Trying fallback...")
+            return generate_explanation(
+                user_query, result_context, data_context, conversation_history, model=FALLBACK_MODEL
+            )
+        else:
+            logger.error(f"Fallback model ({FALLBACK_MODEL}) also failed: {e}")
+            raise
+
+
 async def stream_response(
     user_query: str,
     data_context: str = "",
@@ -143,8 +174,10 @@ def _build_messages(
     """
     from datetime import datetime
 
-    # System message with data context
     system_content = SYSTEM_PROMPT
+    if LLM_GUARDRAILS:
+        system_content += "\n\n--- LLM GUARDRAILS ---\n"
+        system_content += "\n".join(f"- {rule}" for rule in LLM_GUARDRAILS)
 
     if data_context:
         system_content += f"\n\n--- DATA CONTEXT ---\n{data_context}\n--- END DATA CONTEXT ---"
@@ -153,7 +186,6 @@ def _build_messages(
 
     messages = [{"role": "system", "content": system_content}]
 
-    # Add conversation history (last 10 messages for context window management)
     if conversation_history:
         for msg in conversation_history[-10:]:
             role = msg.get("role", "user")
@@ -161,8 +193,49 @@ def _build_messages(
             if role in ("user", "assistant") and content:
                 messages.append({"role": role, "content": content})
 
-    # Add current user query
     messages.append({"role": "user", "content": user_query})
+
+    return messages
+
+
+def _build_explanation_messages(
+    user_query: str,
+    result_context: str,
+    data_context: str = "",
+    conversation_history: list[dict] | None = None,
+) -> list[dict]:
+    from datetime import datetime
+
+    system_content = SYSTEM_PROMPT
+    if LLM_GUARDRAILS:
+        system_content += "\n\n--- LLM GUARDRAILS ---\n"
+        system_content += "\n".join(f"- {rule}" for rule in LLM_GUARDRAILS)
+
+    system_content += (
+        "\n\nYou are a data analyst. You must not compute or estimate values. "
+        "Only explain the provided results and relate them to the user's request."
+    )
+
+    if data_context:
+        system_content += f"\n\n--- DATA CONTEXT ---\n{data_context}\n--- END DATA CONTEXT ---"
+
+    system_content += f"\n\nCurrent date/time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S (%A)')}"
+
+    messages = [{"role": "system", "content": system_content}]
+
+    if conversation_history:
+        for msg in conversation_history[-10:]:
+            role = msg.get("role", "user")
+            content = msg.get("content", "")
+            if role in ("user", "assistant") and content:
+                messages.append({"role": role, "content": content})
+
+    messages.append(
+        {
+            "role": "user",
+            "content": f"User query: {user_query}\n\nRESULTS:\n{result_context}\n\nPlease explain these findings clearly and concisely.",
+        }
+    )
 
     return messages
 

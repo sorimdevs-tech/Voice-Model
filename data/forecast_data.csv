@@ -1,46 +1,16 @@
 Date,Week,Plant,Department,Model,Forecast_Units,Forecast_Revenue
-2024-02-05,W06,Dearborn,Assembly,F-150,102,51200
-2024-02-07,W06,Chicago,Paint Shop,Mustang,108,54500
-2024-02-10,W06,Detroit,Body Shop,F-150,95,47000
-2024-02-14,W07,Dearborn,Logistics,F-150,110,55200
-2024-02-18,W07,Chicago,Assembly,Mustang,115,57500
-2024-03-03,W09,Detroit,Paint Shop,Mustang,120,60000
-2024-03-06,W10,Dearborn,Body Shop,F-150,128,64000
-2024-03-09,W10,Chicago,Assembly,Mustang,135,67500
-2024-03-13,W11,Detroit,Logistics,Mustang,130,64800
-2024-03-18,W11,Dearborn,Quality Check,F-150,138,69000
-2024-04-02,W13,Chicago,Assembly,Mustang,142,71000
-2024-04-06,W14,Detroit,Body Shop,F-150,148,74000
-2024-04-10,W14,Dearborn,Paint Shop,F-150,150,75200
-2024-04-15,W15,Chicago,Logistics,Mustang,145,72500
-2024-04-20,W16,Detroit,Assembly,Mustang,152,76000
-2024-04-25,W17,Dearborn,Quality Check,F-150,140,70000
-2024-05-08,W19,Dearborn,Body Shop,F-150,112,56000
-2024-05-09,W19,Chicago,Paint Shop,Mustang,118,59000
-2024-05-10,W19,Dearborn,Assembly,F-150,125,62500
-2024-05-11,W19,Chicago,Quality Check,Mustang,122,61000
-2024-05-12,W19,Dearborn,Logistics,F-150,135,67500
-2024-05-13,W20,Chicago,Body Shop,Mustang,140,70000
-2024-05-14,W20,Dearborn,Paint Shop,F-150,146,73000
-2024-05-15,W20,Chicago,Assembly,Mustang,150,75000
-2024-05-16,W20,Dearborn,Quality Check,F-150,155,77500
-2024-05-17,W20,Chicago,Logistics,Mustang,160,80000
-2024-05-18,W20,Dearborn,Body Shop,F-150,168,84000
-2024-05-19,W20,Chicago,Paint Shop,Mustang,172,86000
-2024-05-20,W21,Dearborn,Assembly,F-150,178,89000
-2024-05-21,W21,Chicago,Quality Check,Mustang,182,91000
-2024-05-22,W21,Dearborn,Logistics,F-150,185,92500
-2024-05-23,W21,Chicago,Body Shop,Mustang,190,95000
-2024-05-24,W21,Dearborn,Paint Shop,F-150,195,97500
-2024-05-25,W21,Chicago,Assembly,Mustang,200,100000
-2024-05-26,W21,Dearborn,Quality Check,F-150,205,102500
-2024-05-27,W22,Chicago,Logistics,Mustang,198,99000
-2024-06-02,W22,Dearborn,Assembly,F-150,210,105000
-2024-06-05,W23,Detroit,Body Shop,Mustang,205,102000
-2024-06-08,W23,Chicago,Paint Shop,Mustang,215,107500
-2024-06-12,W24,Dearborn,Logistics,F-150,220,110000
-2024-06-16,W24,Detroit,Assembly,Mustang,225,112500
-2024-06-20,W25,Chicago,Quality Check,Mustang,218,109000
-2024-06-24,W25,Dearborn,Body Shop,F-150,230,115000
-2024-06-27,W25,Detroit,Paint Shop,Mustang,222,111000
-2024-06-29,W26,Chicago,Assembly,Mustang,235,117500
+2026-05-01,W18,Dearborn,Assembly,F-150,165,82500
+2026-05-03,W18,Chicago,Paint Shop,Mustang,170,85000
+2026-05-05,W18,Detroit,Body Shop,F-150,162,81000
+2026-05-07,W19,Dearborn,Logistics,F-150,175,87500
+2026-05-09,W19,Chicago,Assembly,Mustang,182,91000
+2026-05-11,W19,Detroit,Paint Shop,Mustang,188,94000
+2026-05-13,W20,Dearborn,Body Shop,F-150,192,96000
+2026-05-15,W20,Chicago,Assembly,Mustang,198,99000
+2026-05-17,W20,Dearborn,Quality Check,F-150,190,95000
+2026-05-19,W21,Chicago,Logistics,Mustang,202,101000
+2026-05-21,W21,Dearborn,Assembly,F-150,208,104000
+2026-05-23,W21,Chicago,Paint Shop,Mustang,212,106000
+2026-05-25,W21,Dearborn,Body Shop,F-150,218,109000
+2026-05-27,W22,Chicago,Assembly,Mustang,210,105000
+2026-05-29,W22,Detroit,Assembly,Mustang,220,110000
