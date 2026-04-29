@@ -75,11 +75,7 @@ VOXA is an intelligent voice assistant designed specifically for automotive manu
    ```
 
 5. Configure environment variables:
-   Create a `.env` file in the backend directory with:
-   ```
-   GROQ_API_KEY=your_groq_api_key_here
-   SECRET_KEY=your_jwt_secret_key_here
-   ```
+   Copy `backend/.env.example` to `backend/.env` and fill in your values.
 
 ### Frontend Setup
 

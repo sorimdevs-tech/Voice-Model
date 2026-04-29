@@ -25,6 +25,7 @@ MANIFEST
 htmlcov/
 
 # Environments
+# Local env files should not be pushed to source control
 .env
 .venv/
 venv/
