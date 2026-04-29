@@ -14,6 +14,7 @@ load_dotenv(BACKEND_DIR / ".env")
 # ── Groq LLM ──
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
 PRIMARY_MODEL = os.getenv("PRIMARY_MODEL", "mistral-saba-24b")
+DEBUG_MODE = os.getenv("DEBUG_MODE", "false").lower() == "true"
 FALLBACK_MODEL = os.getenv("FALLBACK_MODEL", "meta-llama/llama-4-scout-17b-16e-instruct")
 
 # ── Whisper STT ──
