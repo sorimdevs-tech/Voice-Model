@@ -1,0 +1,5 @@
+Date,Week,Plant,Department,Issue_Type,Severity,Affected_Units,Status
+2024-05-01,W18,Dearborn,Body Shop,Quality Issue,High,10,Active
+2024-05-06,W19,Chicago,Body Shop,Quality Issue,Medium,12,Resolved
+2024-05-11,W19,Dearborn,Body Shop,Quality Issue,High,15,Active
+2024-05-16,W20,Chicago,Body Shop,Quality Issue,Medium,17,Resolved

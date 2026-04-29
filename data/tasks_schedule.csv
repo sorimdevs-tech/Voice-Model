@@ -1,0 +1,21 @@
+Task_ID,Date,Week,Plant,Department,Task_Name,Task_Type,Priority,Status,Assigned_To
+T1,2024-05-01,W18,Dearborn,Body Shop,Body Shop Task 1,Maintenance,High,Completed,Team 1
+T2,2024-05-02,W18,Chicago,Paint Shop,Paint Shop Task 2,Production,Medium,Scheduled,Team 2
+T3,2024-05-03,W18,Dearborn,Assembly,Assembly Task 3,Production,Medium,Completed,Team 3
+T4,2024-05-04,W18,Chicago,Quality Check,Quality Check Task 4,Maintenance,Medium,Scheduled,Team 1
+T5,2024-05-05,W18,Dearborn,Logistics,Logistics Task 5,Production,High,Completed,Team 2
+T6,2024-05-06,W19,Chicago,Body Shop,Body Shop Task 6,Production,Medium,Scheduled,Team 3
+T7,2024-05-07,W19,Dearborn,Paint Shop,Paint Shop Task 7,Maintenance,Medium,Completed,Team 1
+T8,2024-05-08,W19,Chicago,Assembly,Assembly Task 8,Production,Medium,Scheduled,Team 2
+T9,2024-05-09,W19,Dearborn,Quality Check,Quality Check Task 9,Production,High,Completed,Team 3
+T10,2024-05-10,W19,Chicago,Logistics,Logistics Task 10,Maintenance,Medium,Scheduled,Team 1
+T11,2024-05-11,W19,Dearborn,Body Shop,Body Shop Task 11,Production,Medium,Completed,Team 2
+T12,2024-05-12,W19,Chicago,Paint Shop,Paint Shop Task 12,Production,Medium,Scheduled,Team 3
+T13,2024-05-13,W20,Dearborn,Assembly,Assembly Task 13,Maintenance,High,Completed,Team 1
+T14,2024-05-14,W20,Chicago,Quality Check,Quality Check Task 14,Production,Medium,Scheduled,Team 2
+T15,2024-05-15,W20,Dearborn,Logistics,Logistics Task 15,Production,Medium,Completed,Team 3
+T16,2024-05-16,W20,Chicago,Body Shop,Body Shop Task 16,Maintenance,Medium,Scheduled,Team 1
+T17,2024-05-17,W20,Dearborn,Paint Shop,Paint Shop Task 17,Production,High,Completed,Team 2
+T18,2024-05-18,W20,Chicago,Assembly,Assembly Task 18,Production,Medium,Scheduled,Team 3
+T19,2024-05-19,W20,Dearborn,Quality Check,Quality Check Task 19,Maintenance,Medium,Completed,Team 1
+T20,2024-05-20,W21,Chicago,Logistics,Logistics Task 20,Production,Medium,Scheduled,Team 2

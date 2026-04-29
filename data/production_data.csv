@@ -1,0 +1,21 @@
+Date,Week,Month,Quarter,Plant,Department,Model,Units,Revenue
+2024-05-01,W18,5,Q2,Dearborn,Body Shop,F-150,100,50000
+2024-05-02,W18,5,Q2,Chicago,Paint Shop,Mustang,105,52500
+2024-05-03,W18,5,Q2,Dearborn,Assembly,F-150,110,55000
+2024-05-04,W18,5,Q2,Chicago,Quality Check,Mustang,115,57500
+2024-05-05,W18,5,Q2,Dearborn,Logistics,F-150,120,60000
+2024-05-06,W19,5,Q2,Chicago,Body Shop,Mustang,125,62500
+2024-05-07,W19,5,Q2,Dearborn,Paint Shop,F-150,130,65000
+2024-05-08,W19,5,Q2,Chicago,Assembly,Mustang,135,67500
+2024-05-09,W19,5,Q2,Dearborn,Quality Check,F-150,140,70000
+2024-05-10,W19,5,Q2,Chicago,Logistics,Mustang,145,72500
+2024-05-11,W19,5,Q2,Dearborn,Body Shop,F-150,150,75000
+2024-05-12,W19,5,Q2,Chicago,Paint Shop,Mustang,155,77500
+2024-05-13,W20,5,Q2,Dearborn,Assembly,F-150,160,80000
+2024-05-14,W20,5,Q2,Chicago,Quality Check,Mustang,165,82500
+2024-05-15,W20,5,Q2,Dearborn,Logistics,F-150,170,85000
+2024-05-16,W20,5,Q2,Chicago,Body Shop,Mustang,175,87500
+2024-05-17,W20,5,Q2,Dearborn,Paint Shop,F-150,180,90000
+2024-05-18,W20,5,Q2,Chicago,Assembly,Mustang,185,92500
+2024-05-19,W20,5,Q2,Dearborn,Quality Check,F-150,190,95000
+2024-05-20,W21,5,Q2,Chicago,Logistics,Mustang,195,97500
