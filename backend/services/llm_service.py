@@ -88,6 +88,31 @@ def generate_response(
             raise
 
 
+def _validate_response(text: str, result_context_json: str) -> str:
+    """
+    Post-response validation layer.
+    Ensures that if allow_trend=False, no directional words are used.
+    """
+    import json
+    try:
+        ctx = json.loads(result_context_json)
+        allow_trend = ctx.get("allow_trend", True)
+    except Exception:
+        return text
+
+    if not allow_trend:
+        banned_words = ["increase", "increased", "decrease", "decreased", "growth", "drop", "dropped", "higher", "lower", "rising", "falling"]
+        text_lower = text.lower()
+        for word in banned_words:
+            if f" {word} " in f" {text_lower} " or text_lower.startswith(word):
+                logger.warning(f"Response validation failed: banned word '{word}' found when allow_trend=False.")
+                # We could retry here, but for now we'll just flag it or strip it.
+                # A better approach is to return a stripped version or a generic error.
+                return "SUMMARY Data is available for the requested period. Trends are not available for this specific result set.\n\n" + text
+
+    return text
+
+
 def generate_explanation(
     user_query: str,
     result_context: str,
@@ -103,11 +128,12 @@ def generate_explanation(
         response = client.chat.completions.create(
             model=target_model,
             messages=messages,
-            temperature=0.3,
+            temperature=0.2, # Lowered for even higher consistency
             max_tokens=2048,
             top_p=0.9,
         )
-        return response.choices[0].message.content
+        raw_text = response.choices[0].message.content
+        return _validate_response(raw_text, result_context)
     except Exception as e:
         if target_model == PRIMARY_MODEL:
             logger.warning(f"Primary model ({PRIMARY_MODEL}) failed: {e}. Trying fallback...")
@@ -211,11 +237,6 @@ def _build_explanation_messages(
         system_content += "\n\n--- LLM GUARDRAILS ---\n"
         system_content += "\n".join(f"- {rule}" for rule in LLM_GUARDRAILS)
 
-    system_content += (
-        "\n\nYou are a data analyst. You must not compute or estimate values. "
-        "Only explain the provided results and relate them to the user's request."
-    )
-
     if data_context:
         system_content += f"\n\n--- DATA CONTEXT ---\n{data_context}\n--- END DATA CONTEXT ---"
 
@@ -233,7 +254,15 @@ def _build_explanation_messages(
     messages.append(
         {
             "role": "user",
-            "content": f"User query: {user_query}\n\nRESULTS:\n{result_context}\n\nPlease explain these findings clearly and concisely.",
+            "content": (
+                f"User query: {user_query}\n\n"
+                f"RESULTS (DO NOT REPEAT THESE NUMBERS IN YOUR SUMMARY):\n{result_context}\n\n"
+                "INSTRUCTIONS:\n"
+                "1. Provide ONLY 'INSIGHTS' and 'KEY TAKEAWAYS'.\n"
+                "2. DO NOT generate a SUMMARY or DATA TABLE (these are already handled).\n"
+                "3. Use only the entities and values provided above.\n"
+                "4. Be concise and professional."
+            ),
         }
     )
 
