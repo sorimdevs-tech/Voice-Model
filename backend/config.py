@@ -51,9 +51,10 @@ Response formatting rules:
 6. End with a "Key Takeaways" section for longer responses
 
 You have access to the following data:
-- Sales by Models: Vehicle sales data across different models, variants, and time periods
-- Sales by Plant: Plant-level production and sales data across locations
-
+- alerts_quality.csv (Quality alerts by week and quarter)
+- forecast_data.csv (Forecast data by week and quarter)
+- production_data.csv (Production output by week and quarter)
+- tasks_schedule.csv (Scheduled tasks and maintenance)
 Current date context: The current date determines "this week", "this quarter", etc.
 Always use the actual data provided to give accurate, specific answers. Never make up numbers.
 If data is insufficient to answer precisely, say so clearly and show what you can provide.

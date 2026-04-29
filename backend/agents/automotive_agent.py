@@ -93,6 +93,61 @@ def detect_intent(query: str) -> str:
     return max(scores, key=scores.get)
 
 
+def detect_structured_query(query: str) -> str | None:
+    """Detect whether the question can be answered with a structured data query."""
+    query_lower = query.lower()
+
+    if "plant" in query_lower and any(k in query_lower for k in ["highest", "most", "max", "top"]) and any(k in query_lower for k in ["issue", "issues", "alert", "alerts"]):
+        return "highest_issues_by_plant"
+
+    return None
+
+
+def execute_structured_query(query: str) -> str | None:
+    """Run a safe structured query for supported data-first requests."""
+    intent = detect_structured_query(query)
+    if intent is None:
+        return None
+
+    data_svc = get_data_service()
+
+    if intent == "highest_issues_by_plant":
+        sql = """
+            SELECT plant,
+                   SUM(CASE WHEN LOWER(status) = 'active' THEN 1 ELSE 0 END) AS active_issues,
+                   COUNT(*) AS total_issues
+            FROM alerts_quality
+            GROUP BY plant
+            ORDER BY active_issues DESC, total_issues DESC
+        """
+        df = data_svc.execute_query(sql)
+        if df.empty:
+            return None
+
+        top = df.iloc[0]
+
+        headers = [str(col) for col in df.columns]
+        rows = df.values.tolist()
+        table_lines = ["| " + " | ".join(headers) + " |", "|" + "---|" * len(headers)]
+        for row in rows:
+            table_lines.append("| " + " | ".join(str(item) for item in row) + " |")
+        table_md = "\n".join(table_lines)
+
+        response = [
+            f"SUMMARY The plant with the highest number of active issues is **{top['plant']}**, with **{int(top['active_issues'])}** active issue(s) and **{int(top['total_issues'])}** total issue(s).",
+            "",
+            "### Quality issues by plant",
+            table_md,
+            "",
+            "Key Takeaways:",
+            f"- **{top['plant']}** has the most active issues in the `alerts_quality` dataset.",
+            "- This answer is based directly on the actual dataset and not on invented values.",
+        ]
+        return "\n".join(response)
+
+    return None
+
+
 def build_data_context(intent: str, query: str) -> str:
     """
     Build the data context string based on detected intent.
@@ -168,6 +223,11 @@ async def process_query(
     intent = detect_intent(query)
     logger.info(f"Query: '{query[:60]}...' → Intent: {intent}")
 
+    structured_response = execute_structured_query(query)
+    if structured_response is not None:
+        logger.info("Returning structured response for supported query")
+        return structured_response
+
     data_context = build_data_context(intent, query)
 
     response = llm_service.generate_response(
@@ -189,6 +249,12 @@ async def stream_query(
     """
     intent = detect_intent(query)
     logger.info(f"Streaming query: '{query[:60]}...' → Intent: {intent}")
+
+    structured_response = execute_structured_query(query)
+    if structured_response is not None:
+        logger.info("Returning structured response for supported stream query")
+        yield structured_response
+        return
 
     data_context = build_data_context(intent, query)
 
