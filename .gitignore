@@ -72,6 +72,11 @@ pip-delete-this-directory.txt
 *.db
 *.sqlite
 *.sqlite3
+*.duckdb
+data/*.duckdb
+
+# Temporary and Scratch
+scratch/
 
 # Voice Assistant Specific
 *.wav

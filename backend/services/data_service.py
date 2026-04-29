@@ -27,7 +27,7 @@ class DataService:
         self._loaded = False
 
     def load_data(self):
-        """Load Excel files into DuckDB tables."""
+        """Load CSV and Excel files into DuckDB tables."""
         try:
             # ── Load Sales by Models ──
             models_path = self.data_dir / "Sales by Models.xlsx"
@@ -58,10 +58,11 @@ class DataService:
             for table_name, file_name in csv_files:
                 path = self.data_dir / file_name
                 if path.exists():
-                    # Read with pandas first to ensure we can clean columns if needed
                     df = pd.read_csv(path)
-                    # Clean column names: strip whitespace
                     df.columns = [str(c).strip() for c in df.columns]
+                    # Clean all string values
+                    for col in df.select_dtypes(include=['object']):
+                        df[col] = df[col].astype(str).str.strip()
                     
                     self.conn.execute(f"DROP TABLE IF EXISTS {table_name}")
                     self.conn.execute(f"CREATE TABLE {table_name} AS SELECT * FROM df")

@@ -15,6 +15,7 @@ load_dotenv(BACKEND_DIR / ".env")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
 PRIMARY_MODEL = os.getenv("PRIMARY_MODEL", "llama-3.3-70b-versatile")
 FALLBACK_MODEL = os.getenv("FALLBACK_MODEL", "llama-3.1-8b-instant")
+DEBUG_MODE = os.getenv("DEBUG_MODE", "false").lower() == "true"
 
 # ── Whisper STT ──
 WHISPER_MODEL = os.getenv("WHISPER_MODEL", "base.en")
@@ -32,9 +33,22 @@ JWT_SECRET = os.getenv("JWT_SECRET", "voxa-demo-secret-key-change-in-production"
 JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
 JWT_EXPIRY_HOURS = int(os.getenv("JWT_EXPIRY_HOURS", "168"))
 
+# ── LLM Guardrails ──
+LLM_GUARDRAILS = [
+    "DO NOT invent any numbers, percentages, or entities (plants, departments).",
+    "If a value or entity is not explicitly present in 'computed_results' or 'summary': DO NOT generate it. Return 'No data available' for that specific point.",
+    "Only use values present in 'computed_results', 'summary', or 'signals'.",
+    "If 'allow_trend' is False → DO NOT mention increase/decrease or use directional words.",
+    "ALWAYS refer to time ranges precisely (e.g., 'Week 12 of 2026') using 'time_meta.used'.",
+    "If 'time_meta.fallback_occurred' is True → State: 'No data for [requested range], showing latest available: [used range]'.",
+    "DO NOT mix metrics: 'alerts' != 'active alerts' != 'affected_units'.",
+    "If 'display_unit' is 'auto' → Format large numbers for readability (e.g., $1.5M).",
+    "DO NOT expose internal keys like 'computed_results', 'sql', or 'signals' in the response.",
+    "Every insight must be directly supported by computed data.",
+]
+
 # ── Automotive System Prompt ──
-SYSTEM_PROMPT = """You are VOXA, an AI-powered voice assistant for an automobile manufacturing plant.
-You serve as a dashboard assistant for the Plant Manager.
+SYSTEM_PROMPT = """You are an AI Data Analyst for a manufacturing data system.
 
 CRITICAL RULE:
 You MUST respond to EVERY query with a FIXED DASHBOARD TEMPLATE in JSON format.
