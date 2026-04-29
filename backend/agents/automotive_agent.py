@@ -710,6 +710,12 @@ def _parse_filters(query: str, table_name: str) -> dict:
                 continue
             value_text = str(value).lower()
             if value_text and value_text in query_lower:
+                # Skip filtering on generic terms that match column values but are used generally
+                if value_text in ["quality issue", "alert", "issue"] and column == "issue_type":
+                    # Only filter if the query has it as a distinct specific term, not a plural/general
+                    if f" {value_text} " not in f" {query_lower} ":
+                        continue
+
                 if column not in filters:
                     filters[column] = []
                 if value not in filters[column]:
@@ -729,39 +735,52 @@ def _choose_time_clause(table_name: str, time_range: dict | None) -> tuple[str |
         return None, {"used": None, "requested": None}
 
     date_col = _get_date_column(table_name)
+    # Ensure date_col is valid for the specific table
+    if table_name == "alerts_quality":
+        # Check if column is actually 'date' or 'Date' (some CSVs vary)
+        data_svc = get_data_service()
+        cols = [c["name"].lower() for c in data_svc.get_table_schemas().get(table_name, [])]
+        if "date" not in cols and "date" in cols: # Should be lowercase already
+             pass 
+    
+    # Use a more robust date casting that handles YYYY-MM-DD explicitly
+    date_expr = f"strptime({date_col}, '%Y-%m-%d')" if table_name == "alerts_quality" else f"TRY_CAST({date_col} AS DATE)"
     expr = None
     requested = time_range.get("requested")
     if time_range["type"] == "month":
         expr = (
-            f"EXTRACT(month FROM CAST({date_col} AS DATE)) = {time_range['month']} AND "
-            f"EXTRACT(year FROM CAST({date_col} AS DATE)) = {time_range['year']}"
+            f"EXTRACT(month FROM {date_expr}) = {time_range['month']} AND "
+            f"EXTRACT(year FROM {date_expr}) = {time_range['year']}"
         )
     elif time_range["type"] == "quarter":
         q = time_range["quarter"]
         yr = time_range["year"]
-        # Prefer month-based filtering (reliable) over quarter column (format may vary)
-        # Q1 = months 1,2,3  Q2=4,5,6  Q3=7,8,9  Q4=10,11,12
         q_start = (q - 1) * 3 + 1
         q_end = q * 3
-        # Try quarter column first if it exists, otherwise use month extraction
-        # Use month-based approach as it's data-agnostic
         expr = (
-            f"EXTRACT(month FROM CAST({date_col} AS DATE)) BETWEEN {q_start} AND {q_end} AND "
-            f"EXTRACT(year FROM CAST({date_col} AS DATE)) = {yr}"
+            f"EXTRACT(month FROM {date_expr}) BETWEEN {q_start} AND {q_end} AND "
+            f"EXTRACT(year FROM {date_expr}) = {yr}"
         )
     elif time_range["type"] == "week":
         w = time_range["week"]
         yr = time_range["year"]
-        # Match multiple common formats: W06, W6, w06, w6, 06, 6, "Week 6", etc.
-        # Also use EXTRACT(week FROM date) as a format-agnostic fallback.
-        expr = (
-            f"("
-            f"  LOWER(CAST(week AS VARCHAR)) IN ('w{w:02d}', 'w{w}', '{w:02d}', '{w}', 'week {w}', 'week {w:02d}') "
-            f"  OR EXTRACT(week FROM CAST({date_col} AS DATE)) = {w}"
-            f") AND EXTRACT(year FROM CAST({date_col} AS DATE)) = {yr}"
-        )
+        # Prioritize the manual 'week' column if it exists in the table.
+        # This prevents double-counting when manual labels don't match ISO calendar weeks.
+        data_svc = get_data_service()
+        table_cols = [c["name"] for c in data_svc.get_table_schemas().get(table_name, [])]
+        
+        if "week" in table_cols:
+            expr = (
+                f"LOWER(CAST(week AS VARCHAR)) IN ('w{w:02d}', 'w{w}', '{w:02d}', '{w}', 'week {w}', 'week {w:02d}') "
+                f"AND EXTRACT(year FROM {date_expr}) = {yr}"
+            )
+        else:
+            expr = (
+                f"EXTRACT(week FROM {date_expr}) = {w} AND "
+                f"EXTRACT(year FROM {date_expr}) = {yr}"
+            )
     elif time_range["type"] == "year":
-        expr = f"EXTRACT(year FROM CAST({date_col} AS DATE)) = {time_range['year']}"
+        expr = f"EXTRACT(year FROM {date_expr}) = {time_range['year']}"
     else:
         return None, {"used": requested, "requested": requested}
 
@@ -771,7 +790,7 @@ def _choose_time_clause(table_name: str, time_range: dict | None) -> tuple[str |
     if row_count > 0:
         return expr, {"used": requested, "requested": requested, "available_rows": int(row_count)}
 
-    latest_sql = f"SELECT MAX(CAST({date_col} AS DATE)) AS latest_date FROM {table_name}"
+    latest_sql = f"SELECT MAX({date_expr}) AS latest_date FROM {table_name}"
     latest_row = data_svc.execute_query(latest_sql)
     if latest_row.empty or latest_row.iloc[0, 0] is None:
         return expr, {"used": requested, "requested": requested, "available_rows": 0}
@@ -786,8 +805,8 @@ def _choose_time_clause(table_name: str, time_range: dict | None) -> tuple[str |
         fallback_expr = (
             f"("
             f"  LOWER(CAST(week AS VARCHAR)) IN ('w{used_week:02d}', 'w{used_week}', '{used_week:02d}', '{used_week}', 'week {used_week}', 'week {used_week:02d}') "
-            f"  OR EXTRACT(week FROM CAST({date_col} AS DATE)) = {used_week}"
-            f") AND EXTRACT(year FROM CAST({date_col} AS DATE)) = {used_year}"
+            f"  OR EXTRACT(week FROM {date_expr}) = {used_week}"
+            f") AND EXTRACT(year FROM {date_expr}) = {used_year}"
         )
     elif time_range["type"] == "quarter":
         used_quarter = (latest_date.month - 1) // 3 + 1
@@ -796,8 +815,8 @@ def _choose_time_clause(table_name: str, time_range: dict | None) -> tuple[str |
         fq_start = (used_quarter - 1) * 3 + 1
         fq_end = used_quarter * 3
         fallback_expr = (
-            f"EXTRACT(month FROM CAST({date_col} AS DATE)) BETWEEN {fq_start} AND {fq_end} AND "
-            f"EXTRACT(year FROM CAST({date_col} AS DATE)) = {used_year}"
+            f"EXTRACT(month FROM {date_expr}) BETWEEN {fq_start} AND {fq_end} AND "
+            f"EXTRACT(year FROM {date_expr}) = {used_year}"
         )
     else:
         # Default to month
@@ -805,8 +824,8 @@ def _choose_time_clause(table_name: str, time_range: dict | None) -> tuple[str |
         used_year = int(latest_date.strftime("%Y"))
         used = latest_date.strftime("%B %Y")
         fallback_expr = (
-            f"EXTRACT(month FROM CAST({date_col} AS DATE)) = {used_month} AND "
-            f"EXTRACT(year FROM CAST({date_col} AS DATE)) = {used_year}"
+            f"EXTRACT(month FROM {date_expr}) = {used_month} AND "
+            f"EXTRACT(year FROM {date_expr}) = {used_year}"
         )
         
     return fallback_expr, {
@@ -998,16 +1017,20 @@ def _build_sql_for_intent(intent: dict) -> tuple[str, dict, str] | None:
         select_clauses.append(f"COUNT(*) AS total_{col_label}")
         alias = f"total_{col_label}"
     elif aggregation == "max":
-        # If there's a group_by (e.g. "which model had highest"), rank by SUM and take top 1
-        if group_by:
+        # For alerts, 'max' means we want the group with the highest COUNT.
+        if metric == "alerts":
+            # Select clause already added in the metric=='alerts' block
+            pass
+        elif group_by:
             select_clauses.append(f"SUM({metric_expr}) AS total_{col_label}")
             alias = f"total_{col_label}"
         else:
             select_clauses.append(f"MAX({metric_expr}) AS max_{col_label}")
             alias = f"max_{col_label}"
     elif aggregation == "min":
-        # If there's a group_by, rank by SUM ASC and take bottom 1
-        if group_by:
+        if metric == "alerts":
+            pass
+        elif group_by:
             select_clauses.append(f"SUM({metric_expr}) AS total_{col_label}")
             alias = f"total_{col_label}"
         else:
@@ -1123,9 +1146,9 @@ def _build_sql_for_intent(intent: dict) -> tuple[str, dict, str] | None:
         is_single_best = any(k in query_lower_raw for k in ["highest", "lowest", "which", "what", "best", "worst", "leading"])
         is_top_list = any(k in query_lower_raw for k in ["top", "bottom"])
         if is_single_best and not is_top_list:
-            # "Which model had highest" → show only the #1 entity
+            # "Which model had highest" → Order by the metric so the summary logic picks the top one
             sort_dir = "ASC" if aggregation == "min" or any(k in query_lower_raw for k in ["lowest", "worst", "minimum", "fewest"]) else "DESC"
-            order_clause = f"ORDER BY {alias} {sort_dir} LIMIT 1"
+            order_clause = f"ORDER BY {alias} {sort_dir}"
         elif is_top_list:
             order_clause = f"ORDER BY {alias} DESC LIMIT 5"
         else:
@@ -2028,7 +2051,14 @@ async def process_query(
     intent = detect_intent(query)
     logger.info(f"Query: '{query[:60]}...' → Intent: {intent}")
 
-    # 1. Check for Structured Query First
+    # 1. Check for Dashboard/Summary Queries (Multi-metric)
+    if _is_dashboard_query(query) or _is_filtered_dashboard_query(query):
+        logger.info("Routing to dashboard handler")
+        structured_response = execute_dashboard_query(query)
+        if structured_response:
+            return structured_response
+
+    # 2. Check for Structured Data Queries (Single-metric)
     structured_intent = _parse_structured_intent(query)
     if structured_intent and structured_intent.get("intent_confidence", 1.0) > 0.6:
         structured_response = execute_structured_query(query)
@@ -2089,7 +2119,15 @@ async def stream_query(
     intent = detect_intent(query)
     logger.info(f"Streaming query: '{query[:60]}...' → Intent: {intent}")
 
-    # 1. Check for Structured Query First
+    # 1. Check for Dashboard/Summary Queries (Multi-metric)
+    if _is_dashboard_query(query) or _is_filtered_dashboard_query(query):
+        logger.info("Routing to dashboard handler (stream)")
+        structured_response = execute_dashboard_query(query)
+        if structured_response:
+            yield structured_response
+            return
+
+    # 2. Check for Structured Data Queries (Single-metric)
     structured_intent = _parse_structured_intent(query)
     if structured_intent and structured_intent.get("intent_confidence", 1.0) > 0.6:
         structured_response = execute_structured_query(query)
