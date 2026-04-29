@@ -90,7 +90,7 @@
   /* ── LAYOUT ── */
   .main {
     display: grid;
-    grid-template-columns: 1fr 340px;
+    grid-template-columns: 1fr;
     grid-template-rows: auto auto auto;
     gap: 16px;
     padding: 16px 24px 24px;
@@ -338,15 +338,6 @@
 <header class="topbar">
   <div class="topbar-left">
     <span class="topbar-title">Overview – This Week</span>
-    <div class="date-picker">
-      <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-      May 12 – May 18, 2024
-      <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg>
-    </div>
-  </div>
-  <div class="filters-btn">
-    <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="4" y1="6" x2="20" y2="6"/><line x1="8" y1="12" x2="16" y2="12"/><line x1="11" y1="18" x2="13" y2="18"/></svg>
-    Filters
   </div>
 </header>
 
@@ -536,7 +527,6 @@
       <div class="card">
         <div class="bar-header-row">
           <span class="card-title">Efficiency % by Department</span>
-          <div class="week-select">This Week <svg width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg></div>
         </div>
         <div class="bar-chart-wrap">
           <div class="bar-row">
@@ -568,70 +558,6 @@
     </div><!-- /bottom-panels -->
   </div><!-- /left-col -->
 
-  <!-- RIGHT COLUMN -->
-  <div class="right-col">
-
-    <!-- VOICE COMMANDS -->
-    <div class="card">
-      <div class="voice-header">
-        <span class="card-title">Quick Voice Commands</span>
-        <div class="mic-btn">🎙</div>
-      </div>
-      <div class="voice-list">
-        <div class="voice-item">
-          <div class="voice-wave">
-            <div class="wave-bar" style="height:8px"></div>
-            <div class="wave-bar" style="height:14px"></div>
-            <div class="wave-bar" style="height:10px"></div>
-            <div class="wave-bar" style="height:6px"></div>
-            <div class="wave-bar" style="height:12px"></div>
-          </div>
-          <span class="voice-cmd">Show only delayed vehicles.</span>
-        </div>
-        <div class="voice-item">
-          <div class="voice-wave">
-            <div class="wave-bar" style="height:10px"></div>
-            <div class="wave-bar" style="height:6px"></div>
-            <div class="wave-bar" style="height:14px"></div>
-            <div class="wave-bar" style="height:8px"></div>
-            <div class="wave-bar" style="height:10px"></div>
-          </div>
-          <span class="voice-cmd">Which department has the highest rework this week?</span>
-        </div>
-        <div class="voice-item">
-          <div class="voice-wave">
-            <div class="wave-bar" style="height:12px"></div>
-            <div class="wave-bar" style="height:8px"></div>
-            <div class="wave-bar" style="height:6px"></div>
-            <div class="wave-bar" style="height:14px"></div>
-            <div class="wave-bar" style="height:9px"></div>
-          </div>
-          <span class="voice-cmd">Compare this week vs last week.</span>
-        </div>
-        <div class="voice-item">
-          <div class="voice-wave">
-            <div class="wave-bar" style="height:7px"></div>
-            <div class="wave-bar" style="height:13px"></div>
-            <div class="wave-bar" style="height:9px"></div>
-            <div class="wave-bar" style="height:5px"></div>
-            <div class="wave-bar" style="height:11px"></div>
-          </div>
-          <span class="voice-cmd">Show hourly production trend today.</span>
-        </div>
-        <div class="voice-item">
-          <div class="voice-wave">
-            <div class="wave-bar" style="height:9px"></div>
-            <div class="wave-bar" style="height:5px"></div>
-            <div class="wave-bar" style="height:13px"></div>
-            <div class="wave-bar" style="height:9px"></div>
-            <div class="wave-bar" style="height:7px"></div>
-          </div>
-          <span class="voice-cmd">Display quality issues by model.</span>
-        </div>
-      </div>
-    </div>
-
-  </div><!-- /right-col -->
 </div><!-- /main -->
 
 </body>

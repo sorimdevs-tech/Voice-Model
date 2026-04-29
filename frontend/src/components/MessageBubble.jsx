@@ -162,28 +162,27 @@ export default function MessageBubble({ message, onRetry, onRegenerate, onEdit, 
                   const fullEndIndex = htmlEndIndex + '</html>'.length;
                   extractedHtml = c.substring(htmlStartIndex, fullEndIndex);
                   
-                  // Remove the HTML payload from the text content
-                  displayContent = c.replace(extractedHtml, '');
-                  // Clean up any empty markdown blocks left behind
-                  displayContent = displayContent.replace(/```[a-z]*\s*```/ig, '').trim();
-                }
+                  // Extract content before and after the HTML block
+                  const beforeHtml = c.substring(0, htmlStartIndex).replace(/```[a-z]*\s*$/i, '').trim();
+                  const afterHtml = c.substring(fullEndIndex).replace(/^\s*```/i, '').trim();
 
-                return (
-                  <>
-                    <ReactMarkdown
-                      remarkPlugins={[remarkGfm]}
-                      components={{
-                        table: ({ node, ...props }) => (
-                          <div className="table-glass">
-                            <table {...props} />
-                          </div>
-                        )
-                      }}
-                    >
-                      {displayContent}
-                    </ReactMarkdown>
+                  return (
+                    <>
+                      {beforeHtml && (
+                        <ReactMarkdown
+                          remarkPlugins={[remarkGfm]}
+                          components={{
+                            table: ({ node, ...props }) => (
+                              <div className="table-glass">
+                                <table {...props} />
+                              </div>
+                            )
+                          }}
+                        >
+                          {beforeHtml}
+                        </ReactMarkdown>
+                      )}
 
-                    {extractedHtml && (
                       <div className="w-full bg-white rounded-xl overflow-hidden my-4 border border-gold/[0.3] shadow-lg animate-fade-in-scale" style={{ height: '650px', maxWidth: '1000px', display: 'block' }}>
                         <iframe
                           srcDoc={extractedHtml}
@@ -191,8 +190,38 @@ export default function MessageBubble({ message, onRetry, onRegenerate, onEdit, 
                           title="Dashboard Response"
                         />
                       </div>
-                    )}
-                  </>
+
+                      {afterHtml && (
+                        <ReactMarkdown
+                          remarkPlugins={[remarkGfm]}
+                          components={{
+                            table: ({ node, ...props }) => (
+                              <div className="table-glass">
+                                <table {...props} />
+                              </div>
+                            )
+                          }}
+                        >
+                          {afterHtml}
+                        </ReactMarkdown>
+                      )}
+                    </>
+                  );
+                }
+
+                return (
+                  <ReactMarkdown
+                    remarkPlugins={[remarkGfm]}
+                    components={{
+                      table: ({ node, ...props }) => (
+                        <div className="table-glass">
+                          <table {...props} />
+                        </div>
+                      )
+                    }}
+                  >
+                    {displayContent}
+                  </ReactMarkdown>
                 );
               })()}
             </div>
