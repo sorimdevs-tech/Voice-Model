@@ -698,7 +698,7 @@ def _parse_filters(query: str, table_name: str) -> dict:
     query_lower = query.lower()
     filters = {}
     data_svc = get_data_service()
-    candidate_columns = ["plant", "department", "model", "issue_type", "status"]
+    candidate_columns = ["plant", "department", "model", "issue_type", "status", "severity"]
 
     for column in candidate_columns:
         try:
@@ -750,9 +750,15 @@ def _choose_time_clause(table_name: str, time_range: dict | None) -> tuple[str |
             f"EXTRACT(year FROM CAST({date_col} AS DATE)) = {yr}"
         )
     elif time_range["type"] == "week":
+        w = time_range["week"]
+        yr = time_range["year"]
+        # Match multiple common formats: W06, W6, w06, w6, 06, 6, "Week 6", etc.
+        # Also use EXTRACT(week FROM date) as a format-agnostic fallback.
         expr = (
-            f"LOWER(week) = 'w{time_range['week']:02d}' AND "
-            f"EXTRACT(year FROM CAST({date_col} AS DATE)) = {time_range['year']}"
+            f"("
+            f"  LOWER(CAST(week AS VARCHAR)) IN ('w{w:02d}', 'w{w}', '{w:02d}', '{w}', 'week {w}', 'week {w:02d}') "
+            f"  OR EXTRACT(week FROM CAST({date_col} AS DATE)) = {w}"
+            f") AND EXTRACT(year FROM CAST({date_col} AS DATE)) = {yr}"
         )
     elif time_range["type"] == "year":
         expr = f"EXTRACT(year FROM CAST({date_col} AS DATE)) = {time_range['year']}"
@@ -778,8 +784,10 @@ def _choose_time_clause(table_name: str, time_range: dict | None) -> tuple[str |
         used_year = latest_date.year
         used = f"Week {used_week} {used_year}"
         fallback_expr = (
-            f"LOWER(week) = 'w{used_week:02d}' AND "
-            f"EXTRACT(year FROM CAST({date_col} AS DATE)) = {used_year}"
+            f"("
+            f"  LOWER(CAST(week AS VARCHAR)) IN ('w{used_week:02d}', 'w{used_week}', '{used_week:02d}', '{used_week}', 'week {used_week}', 'week {used_week:02d}') "
+            f"  OR EXTRACT(week FROM CAST({date_col} AS DATE)) = {used_week}"
+            f") AND EXTRACT(year FROM CAST({date_col} AS DATE)) = {used_year}"
         )
     elif time_range["type"] == "quarter":
         used_quarter = (latest_date.month - 1) // 3 + 1
@@ -1275,13 +1283,52 @@ def _execute_structured_intent(intent: dict, signals: dict | None = None) -> dic
 
 
 def _is_dashboard_query(query: str) -> bool:
-    """True when the user wants a high-level overview / dashboard."""
+    """
+    True only when the user wants a high-level global overview with NO specific entity filter.
+    
+    Key rules:
+    - Unambiguous dashboard words (dashboard, overview, full report, etc.) always trigger,
+      UNLESS a specific entity (plant name, model, etc.) is also present.
+    - "summary" alone is too broad: only triggers if there's no "for/of/at <entity>" qualifier,
+      because "Summary for Dearborn" is a filtered query, not a global dashboard.
+    """
     q = query.lower()
-    return any(k in q for k in [
-        "dashboard", "summary", "overview", "overall", "all metrics",
-        "how are we doing", "status report", "plant status", "weekly report",
+
+    # Hard dashboard keywords — unambiguous intent
+    hard_keywords = [
+        "dashboard", "overview", "all metrics",
+        "how are we doing", "status report", "weekly report",
         "show me everything", "full report",
-    ])
+    ]
+    has_hard = any(k in q for k in hard_keywords)
+
+    # "summary" and "overall" are soft — only count them when no entity qualifier follows
+    if not has_hard:
+        soft_keywords = ["summary", "overall", "plant status"]
+        if any(k in q for k in soft_keywords):
+            # If query contains "for/of/at/in <word>", treat it as a filtered query, not a dashboard
+            has_entity_qualifier = bool(re.search(r'\b(for|of|at|in)\s+\w+', q))
+            has_hard = not has_entity_qualifier
+
+    if not has_hard:
+        return False
+
+    # Even for hard keywords: if a specific filterable entity (plant name, model name) is
+    # mentioned, let the structured path handle it so filters are respected.
+    try:
+        data_svc = get_data_service()
+        for column in ["plant", "model", "department"]:
+            try:
+                values = data_svc.get_column_values("production_data", column)
+            except Exception:
+                continue
+            for value in values:
+                if value and str(value).lower() in q:
+                    return False  # Specific entity → not a global dashboard
+    except Exception:
+        pass  # If data service unavailable, proceed with dashboard
+
+    return True
 
 
 def _is_actual_vs_forecast_query(query: str) -> bool:
@@ -1295,14 +1342,37 @@ def _is_actual_vs_forecast_query(query: str) -> bool:
 
 def execute_dashboard_query(query: str) -> str:
     """
-    Build a full dashboard: production + revenue + alerts, all aggregated for the latest available period.
+    Build a full dashboard: production + revenue + alerts, aggregated for the requested period.
+    Respects plant/model/department filters if present in the query.
     """
     data_svc = get_data_service()
     time_range = _parse_time_range(query)
 
+    # Parse any entity filters (plant, model, etc.) so a "dashboard for Dearborn" is scoped correctly
+    prod_filters = _parse_filters(query, "production_data")
+    alert_filters = _parse_filters(query, "alerts_quality")
+    fcast_filters = _parse_filters(query, "forecast_data")
+
+    def _build_filter_clause(filters: dict, table_cols: list[str]) -> str:
+        """Build WHERE filter fragment from a filters dict, skipping unknown columns."""
+        clauses = []
+        for key, value in filters.items():
+            if key not in table_cols:
+                continue
+            if isinstance(value, list):
+                quoted = [f"LOWER('{str(v).replace(chr(39), chr(39)+chr(39))}')" for v in value]
+                clauses.append(f"LOWER({key}) IN ({', '.join(quoted)})")
+            else:
+                safe = str(value).replace("'", "''")
+                clauses.append(f"LOWER({key}) = LOWER('{safe}')")
+        return " AND ".join(clauses)
+
     # --- Production & Revenue ---
     time_expr_prod, time_meta = _choose_time_clause("production_data", time_range)
-    prod_where = f"WHERE {time_expr_prod}" if time_expr_prod else ""
+    prod_table_cols = [c["name"] for c in data_svc.get_table_schemas().get("production_data", [])]
+    prod_filter_sql = _build_filter_clause(prod_filters, prod_table_cols)
+    prod_where_parts = [p for p in [time_expr_prod, prod_filter_sql] if p]
+    prod_where = f"WHERE {' AND '.join(prod_where_parts)}" if prod_where_parts else ""
     try:
         prod_df = data_svc.execute_query(
             f"SELECT SUM(units) AS total_units, SUM(revenue) AS total_revenue FROM production_data {prod_where}"
@@ -1314,7 +1384,10 @@ def execute_dashboard_query(query: str) -> str:
 
     # --- Forecast ---
     time_expr_fcast, _ = _choose_time_clause("forecast_data", time_range)
-    fcast_where = f"WHERE {time_expr_fcast}" if time_expr_fcast else ""
+    fcast_table_cols = [c["name"] for c in data_svc.get_table_schemas().get("forecast_data", [])]
+    fcast_filter_sql = _build_filter_clause(fcast_filters, fcast_table_cols)
+    fcast_where_parts = [p for p in [time_expr_fcast, fcast_filter_sql] if p]
+    fcast_where = f"WHERE {' AND '.join(fcast_where_parts)}" if fcast_where_parts else ""
     try:
         fcast_df = data_svc.execute_query(
             f"SELECT SUM(forecast_units) AS forecast_units, SUM(forecast_revenue) AS forecast_revenue FROM forecast_data {fcast_where}"
@@ -1326,7 +1399,10 @@ def execute_dashboard_query(query: str) -> str:
 
     # --- Alerts ---
     time_expr_alerts, _ = _choose_time_clause("alerts_quality", time_range)
-    alert_where = f"WHERE {time_expr_alerts}" if time_expr_alerts else ""
+    alert_table_cols = [c["name"] for c in data_svc.get_table_schemas().get("alerts_quality", [])]
+    alert_filter_sql = _build_filter_clause(alert_filters, alert_table_cols)
+    alert_where_parts = [p for p in [time_expr_alerts, alert_filter_sql] if p]
+    alert_where = f"WHERE {' AND '.join(alert_where_parts)}" if alert_where_parts else ""
     try:
         alert_df = data_svc.execute_query(
             f"SELECT COUNT(*) AS total_alerts, "
@@ -1345,6 +1421,13 @@ def execute_dashboard_query(query: str) -> str:
     if time_meta.get("fallback_occurred"):
         fallback_note = f"\n\n> ⚠️ No data for **{time_meta['requested']}**. Showing latest available: **{period}**."
 
+    # Build a scope label if entity filters were applied (e.g. "Dearborn plant")
+    scope_parts = []
+    for col, val in prod_filters.items():
+        if col in ("plant", "model", "department"):
+            scope_parts.append(str(val).title() if isinstance(val, str) else ", ".join(str(v).title() for v in val))
+    scope_label = f" — **{', '.join(scope_parts)}**" if scope_parts else ""
+
     # Variance calculations
     units_var = total_units - forecast_units
     rev_var = total_revenue - forecast_revenue
@@ -1353,14 +1436,14 @@ def execute_dashboard_query(query: str) -> str:
 
     summary = (
         f"### Summary\n"
-        f"For **{period}**, production reached **{total_units:,} units** (forecast: {forecast_units:,}, variance: {units_var_str}) "
+        f"For **{period}**{scope_label}, production reached **{total_units:,} units** (forecast: {forecast_units:,}, variance: {units_var_str}) "
         f"with revenue of **${total_revenue:,.0f}** (forecast: ${forecast_revenue:,.0f}, variance: {rev_var_str}). "
         f"There are **{active_alerts} active alerts** out of {total_alerts} total, affecting **{affected_units:,} units**."
         f"{fallback_note}"
     )
 
     table = (
-        "### Dashboard Overview\n"
+        f"### Dashboard Overview{scope_label}\n"
         "| Metric | Actual | Forecast | Variance |\n"
         "|--------|--------|----------|----------|\n"
         f"| Production Units | {total_units:,} | {forecast_units:,} | {units_var_str} |\n"
@@ -1504,11 +1587,49 @@ def detect_structured_query(query: str) -> str | None:
     return None
 
 
+def _is_filtered_dashboard_query(query: str) -> bool:
+    """
+    True when the user wants a summary/overview scoped to a specific entity
+    (plant, model, department) — e.g. "summary for Dearborn", "Dearborn week 10 overview".
+
+    These were intentionally excluded from _is_dashboard_query (which handles global
+    dashboards only), but they must NOT fall through to the LLM without data.
+    execute_dashboard_query already supports filters, so we route them there.
+    """
+    q = query.lower()
+
+    # Must have a summary/overview signal
+    summary_signals = ["summary", "overview", "report", "dashboard", "how is", "how are", "status"]
+    if not any(s in q for s in summary_signals):
+        return False
+
+    # Must mention at least one known entity value from the data
+    try:
+        data_svc = get_data_service()
+        for column in ["plant", "model", "department"]:
+            try:
+                values = data_svc.get_column_values("production_data", column)
+            except Exception:
+                continue
+            for value in values:
+                if value and str(value).lower() in q:
+                    return True
+    except Exception:
+        pass
+
+    return False
+
+
 def execute_structured_query(query: str) -> str | None:
     """Run a safe structured query for supported data-first requests."""
-    # ── Dashboard / summary intent ──
+    # ── Global dashboard / summary intent ──
     if _is_dashboard_query(query):
-        logger.info("Routing to dashboard handler")
+        logger.info("Routing to global dashboard handler")
+        return execute_dashboard_query(query)
+
+    # ── Filtered dashboard: "summary for Dearborn", "Dearborn week 10 report", etc. ──
+    if _is_filtered_dashboard_query(query):
+        logger.info("Routing to filtered dashboard handler")
         return execute_dashboard_query(query)
 
     # ── Actual vs Forecast cross-table comparison ──
@@ -1851,6 +1972,43 @@ def build_data_context(intent: str, query: str, computed_results: str | None = N
     return "\n".join(context_parts)
 
 
+
+def _is_conversational_query(query: str) -> bool:
+    """
+    Returns True when the message is clearly conversational / small-talk and
+    should bypass all data-query logic entirely.
+    """
+    q = query.strip().lower()
+    words = q.split()
+
+    greetings = {
+        "hi", "hello", "hey", "howdy", "hiya", "greetings", "sup", "yo",
+        "good morning", "good afternoon", "good evening", "good night",
+        "thanks", "thank you", "thankyou", "cheers", "bye", "goodbye",
+        "ok", "okay", "cool", "great", "nice", "awesome", "sure", "got it",
+    }
+    if any(q == g or q.startswith(g + " ") or q.startswith(g + ",") for g in greetings):
+        return True
+
+    assistant_meta = [
+        "who are you", "what are you", "what can you do", "what do you do",
+        "how do you work", "what is voxa", "tell me about yourself",
+        "are you an ai", "are you a bot",
+    ]
+    if any(m in q for m in assistant_meta):
+        return True
+
+    # Short message (<=4 words) with no data-domain vocabulary
+    data_domain_words = {
+        "production", "revenue", "alert", "forecast", "units", "plant",
+        "model", "week", "quarter", "month", "sales", "output", "department",
+    }
+    if len(words) <= 4 and not any(w in data_domain_words for w in words):
+        return True
+
+    return False
+
+
 async def process_query(
     query: str,
     conversation_history: list[dict] | None = None,
@@ -1858,6 +2016,15 @@ async def process_query(
     """
     Full pipeline: Intent → Data → LLM → Response (non-streaming).
     """
+    # ── Conversational short-circuit: bypass all data logic for greetings/small-talk ──
+    if _is_conversational_query(query):
+        logger.info(f"Conversational query, bypassing data pipeline: '{query[:40]}'")
+        return llm_service.generate_response(
+            user_query=query,
+            data_context="",
+            conversation_history=conversation_history,
+        )
+
     intent = detect_intent(query)
     logger.info(f"Query: '{query[:60]}...' → Intent: {intent}")
 
@@ -1908,6 +2075,17 @@ async def stream_query(
     Full pipeline: Intent → Data → LLM → Streaming Response.
     Yields tokens as they arrive from the LLM.
     """
+    # ── Conversational short-circuit ──
+    if _is_conversational_query(query):
+        logger.info(f"Conversational stream query, bypassing data pipeline: '{query[:40]}'")
+        async for token in llm_service.stream_response(
+            user_query=query,
+            data_context="",
+            conversation_history=conversation_history,
+        ):
+            yield token
+        return
+
     intent = detect_intent(query)
     logger.info(f"Streaming query: '{query[:60]}...' → Intent: {intent}")
 
