@@ -345,7 +345,7 @@ def build_deterministic_response(df: pd.DataFrame, structured_data: dict) -> str
     try:
         from pathlib import Path
         import re
-        template_path = Path(__file__).parent.parent / "templates" / "dashboard_template.html"
+        template_path = Path(__file__).parent.parent.parent / "template1.html"
         with open(template_path, "r", encoding="utf-8") as f:
             html = f.read()
             

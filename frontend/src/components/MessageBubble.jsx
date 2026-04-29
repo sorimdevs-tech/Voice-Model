@@ -149,55 +149,52 @@ export default function MessageBubble({ message, onRetry, onRegenerate, onEdit, 
             <p>{content}</p>
           ) : (
             <div className={`prose-gold overflow-x-auto ${isError ? 'text-red-400' : ''}`}>
-              <ReactMarkdown
-                remarkPlugins={[remarkGfm]}
-                components={{
-                  table: ({ node, ...props }) => (
-                    <div className="table-glass">
-                      <table {...props} />
-                    </div>
-                  ),
-                  pre({ node, children, ...props }) {
-                    // Bypass <pre> formatting if the inner code is our HTML dashboard
-                    const codeNode = node?.children?.[0];
-                    if (codeNode && codeNode.tagName === 'code') {
-                      const text = (codeNode.children || []).map(child => child.value || '').join('');
-                      if (text.includes('<!DOCTYPE html>')) {
-                        return <div className="dashboard-container">{children}</div>;
-                      }
-                    }
-                    return <pre {...props}>{children}</pre>;
-                  },
-                  code({ node, inline, className, children, ...props }) {
-                    const match = /language-(\w+)/.exec(className || '');
-                    
-                    // Safely extract raw text from AST node instead of React children array
-                    let textContent = '';
-                    if (node && node.children) {
-                      textContent = node.children.map(child => child.value || '').join('');
-                    } else if (typeof children === 'string') {
-                      textContent = children;
-                    } else if (Array.isArray(children)) {
-                      textContent = children.map(child => typeof child === 'string' ? child : '').join('');
-                    }
-                    
-                    if (!inline && (match?.[1] === 'html' || textContent.includes('<!DOCTYPE html>'))) {
-                      return (
-                        <div className="w-full bg-white rounded-xl overflow-hidden my-4 border border-gold/[0.3] shadow-lg animate-fade-in-scale" style={{ height: '650px', maxWidth: '1000px', display: 'block' }}>
-                          <iframe
-                            srcDoc={textContent}
-                            style={{ width: '100%', height: '100%', border: 'none', display: 'block' }}
-                            title="Dashboard Response"
-                          />
-                        </div>
-                      );
-                    }
-                    return <code className={className} {...props}>{children}</code>;
-                  }
-                }}
-              >
-                {content || ''}
-              </ReactMarkdown>
+              {(() => {
+                const c = content || '';
+                let displayContent = c;
+                let extractedHtml = '';
+                
+                const lowerC = c.toLowerCase();
+                const htmlStartIndex = lowerC.indexOf('<!doctype html>');
+                const htmlEndIndex = lowerC.indexOf('</html>');
+                
+                if (htmlStartIndex !== -1 && htmlEndIndex !== -1) {
+                  const fullEndIndex = htmlEndIndex + '</html>'.length;
+                  extractedHtml = c.substring(htmlStartIndex, fullEndIndex);
+                  
+                  // Remove the HTML payload from the text content
+                  displayContent = c.replace(extractedHtml, '');
+                  // Clean up any empty markdown blocks left behind
+                  displayContent = displayContent.replace(/```[a-z]*\s*```/ig, '').trim();
+                }
+
+                return (
+                  <>
+                    <ReactMarkdown
+                      remarkPlugins={[remarkGfm]}
+                      components={{
+                        table: ({ node, ...props }) => (
+                          <div className="table-glass">
+                            <table {...props} />
+                          </div>
+                        )
+                      }}
+                    >
+                      {displayContent}
+                    </ReactMarkdown>
+
+                    {extractedHtml && (
+                      <div className="w-full bg-white rounded-xl overflow-hidden my-4 border border-gold/[0.3] shadow-lg animate-fade-in-scale" style={{ height: '650px', maxWidth: '1000px', display: 'block' }}>
+                        <iframe
+                          srcDoc={extractedHtml}
+                          style={{ width: '100%', height: '100%', border: 'none', display: 'block' }}
+                          title="Dashboard Response"
+                        />
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
             </div>
           )}
 
