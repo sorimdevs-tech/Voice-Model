@@ -195,6 +195,7 @@ MONTHS = {
 def build_deterministic_response(df: pd.DataFrame, structured_data: dict) -> str:
     """
     Generate high-quality SUMMARY and DATA TABLE sections in Python.
+    Summary is rendered as bullet points for readability.
     """
     def format_val(val, metric_name):
         if val is None: return "0"
@@ -214,60 +215,90 @@ def build_deterministic_response(df: pd.DataFrame, structured_data: dict) -> str
         used_time = "the selected period"
 
     metric_raw = structured_data.get("metric", "data")
-    metric = metric_raw.replace("_", " ")
+    metric = metric_raw.replace("_", " ").title()
     val = structured_data.get("value")
-    
-    # 1. Build Summary
+    filters_used = structured_data.get("filters_applied", "")
+    aggregation = structured_data.get("aggregation", "sum")
+
+    # ── Build Summary as 3-4 line prose ──
     if time_meta.get("fallback_occurred"):
         req = time_meta.get("requested")
-        summary = f"SUMMARY No data found for {req}. Showing latest available data from **{used_time}**."
+        summary_text = (
+            f"No data was found for the requested period **{req}**. "
+            f"The figures below reflect the latest available data from **{used_time}**. "
+            f"Please verify the time range or check if data ingestion is up to date."
+        )
     elif val is not None and not structured_data.get("group_by"):
-        # Single value result
         unit = structured_data.get("metric_units", "")
-        formatted_val = format_val(val, metric)
-        if "$" in formatted_val:
-            summary = f"SUMMARY The {metric} for {used_time} is **{formatted_val}**."
-        else:
-            summary = f"SUMMARY The {metric} for {used_time} is **{formatted_val}** {unit}."
+        formatted_val = format_val(val, metric_raw)
+        val_str = formatted_val if "$" in formatted_val else f"{formatted_val} {unit}".strip()
+        filter_note = f" The results are filtered to **{filters_used}**." if filters_used else ""
+        summary_text = (
+            f"For **{used_time}**, the total **{metric}** recorded is **{val_str}**.{filter_note} "
+            f"This figure is aggregated across all matching records in the dataset and reflects the complete result for the selected period."
+        )
     elif not df.empty:
         try:
             group_cols = structured_data.get("group_by")
             if isinstance(group_cols, str):
                 group_cols = [group_cols]
-            
+
             val_col = df.columns[-1]
             temp_df = df.copy()
-            temp_df[val_col] = pd.to_numeric(temp_df[val_col].astype(str).str.replace(',', '').replace('$', ''), errors='coerce')
+            temp_df[val_col] = pd.to_numeric(
+                temp_df[val_col].astype(str).str.replace(',', '').str.replace('$', ''), errors='coerce'
+            )
             top_idx = temp_df[val_col].idxmax()
             top_row = df.loc[top_idx]
-            
+            total_sum = temp_df[val_col].sum()
+
             if group_cols and len(df) > 1:
                 top_entity = ", ".join(str(top_row[col]).title() for col in group_cols if col in df.columns)
-                top_val = format_val(top_row[val_col], metric)
-                summary = f"SUMMARY Found {len(df)} records for {metric} in {used_time}. The highest is **{top_entity}** with **{top_val}**."
-                
+                top_val = format_val(top_row[val_col], metric_raw)
+                total_fmt = format_val(total_sum, metric_raw)
+                contribution = round((float(top_row[val_col]) / float(total_sum)) * 100, 1) if total_sum > 0 else 0
+                filter_note = f" Results are filtered to **{filters_used}**." if filters_used else ""
+                summary_text = (
+                    f"The analysis for **{used_time}** covers **{len(df)} {group_cols[0]}(s)** with a combined total {metric.lower()} of **{total_fmt}**.{filter_note} "
+                    f"The top performer is **{top_entity}**, contributing **{top_val}** — which accounts for **{contribution}%** of the overall total. "
+                    f"The data breakdown below shows the full distribution across all {group_cols[0]}s."
+                )
                 # Add deterministic insight
-                total_sum = temp_df[val_col].sum()
                 if total_sum > 0:
-                    contribution = round((top_row[val_col] / total_sum) * 100, 1)
                     structured_data.setdefault("computed_insights", []).append(
-                        f"The top performing {group_cols[0]} ({top_entity}) contributes {contribution}% of the total {metric} in this set."
+                        f"**{top_entity}** leads all {group_cols[0]}s with a **{contribution}%** share of total {metric.lower()} ({total_fmt}) for {used_time}."
                     )
             elif len(df) == 1:
-                top_val = format_val(top_row[val_col], metric)
+                top_val = format_val(top_row[val_col], metric_raw)
                 if group_cols:
                     top_entity = ", ".join(str(top_row[col]).title() for col in group_cols if col in df.columns)
-                    summary = f"SUMMARY The {metric} for **{top_entity}** in {used_time} is **{top_val}**."
+                    filter_note = f" Results are filtered to **{filters_used}**." if filters_used else ""
+                    summary_text = (
+                        f"For **{used_time}**, the **{metric.lower()}** recorded for **{top_entity}** is **{top_val}**.{filter_note} "
+                        f"This represents the complete aggregated result for this {group_cols[0]} during the selected period."
+                    )
                 else:
-                    summary = f"SUMMARY The total {metric} for {used_time} is **{top_val}**."
+                    summary_text = (
+                        f"For **{used_time}**, the total **{metric.lower()}** is **{top_val}**. "
+                        f"This is the complete aggregated result for the selected period across all matching records in the dataset."
+                    )
             else:
-                summary = f"SUMMARY Found {len(df)} records for {metric} in {used_time}."
+                summary_text = (
+                    f"**{len(df)} record(s)** were found for **{metric.lower()}** in **{used_time}**. "
+                    f"Refer to the data breakdown table below for the full details."
+                )
         except Exception:
-            summary = f"SUMMARY Found {len(df)} records for {metric} in {used_time}."
+            summary_text = f"Data retrieved for **{metric.lower()}** in **{used_time}**. Refer to the breakdown table below."
     else:
-        summary = f"SUMMARY No data records found for {metric} in {used_time}."
+        summary_text = (
+            f"No records were found for **{metric.lower()}** in **{used_time}**. "
+            f"The dataset does not contain any matching entries for this selection. "
+            f"Try adjusting the time range or filter criteria."
+        )
 
-    # 2. Build Data Table
+    summary = f"### Summary\n{summary_text}"
+
+    # ── Build Data Table ──
     if df.empty:
         return f"{summary}\n\nNo data available for this selection."
 
@@ -282,9 +313,9 @@ def build_deterministic_response(df: pd.DataFrame, structured_data: dict) -> str
             else:
                 formatted_row.append(str(item))
         rows.append("| " + " | ".join(formatted_row) + " |")
-    
+
     table_md = "| " + " | ".join(headers) + " |" + "\n" + "|" + "---|" * len(headers) + "\n" + "\n".join(rows)
-    
+
     return f"{summary}\n\n### Data Breakdown\n{table_md}"
 
 
@@ -363,6 +394,7 @@ def validate_sql(intent: dict, sql: str) -> bool:
         
     # 3. Aggregation Check
     agg = intent["aggregation"]
+    group_by = intent["group_by"]
     if agg == "count" and "COUNT" not in sql_upper:
         logger.error(f"SQL Validation Failed: Expected COUNT aggregation")
         return False
@@ -379,9 +411,17 @@ def validate_sql(intent: dict, sql: str) -> bool:
         elif "SUM" not in sql_upper:
             logger.error(f"SQL Validation Failed: Expected SUM aggregation")
             return False
+    # trend/change produce SUM + GROUP BY — accept as long as SUM is present
+    if agg in {"trend", "change"} and "SUM" not in sql_upper:
+        logger.error(f"SQL Validation Failed: Expected SUM for trend aggregation")
+        return False
+    # max/min with group_by uses SUM+ORDER BY internally, so accept SUM or MAX/MIN
+    if agg in {"max", "min"} and group_by:
+        if "SUM" not in sql_upper and "MAX" not in sql_upper and "MIN" not in sql_upper:
+            logger.error(f"SQL Validation Failed: Expected SUM/MAX/MIN aggregation for {agg} intent")
+            return False
         
     # 4. Grouping Check
-    group_by = intent["group_by"]
     if group_by:
         group_by_cols = [group_by] if isinstance(group_by, str) else group_by
         sql_has_group = "GROUP BY" in sql_upper
@@ -427,13 +467,32 @@ def _parse_group_by(query: str) -> str | list[str] | None:
     # Sort by length descending to match longest phrases first
     sorted_groups = sorted(GROUP_BY_SYNONYMS.items(), key=lambda x: len(x[0]), reverse=True)
     
-    # Check if we have "by", "per", "across", etc. to confirm it's a grouping request
+    # Check if we have "by", "per", "across", etc. OR "which X" / "what X" to confirm it's a grouping request
+    # e.g. "which model had highest" => group by model
+    # e.g. "what plant generated" => group by plant
     has_grouping_signal = any(f"{signal} " in query_lower for signal in ["by", "per", "across", "break down", "breakdown"])
     
+    # Also detect "which <entity>" and "what <entity>" as implicit group-by
+    implicit_group_match = re.search(
+        r"\b(?:which|what)\s+(vehicle\s+)?(model|plant|factory|region|department|week|quarter|month)\b",
+        query_lower
+    )
+    if implicit_group_match:
+        has_grouping_signal = True
+
     if not has_grouping_signal:
         return None
 
     matched_phrases = []
+    
+    # If we detected an implicit "which/what <entity>", ensure that entity is first in the group
+    if implicit_group_match:
+        raw_entity = implicit_group_match.group(2).lower()  # e.g. "model", "plant"
+        mapped = GROUP_BY_SYNONYMS.get(raw_entity)
+        if mapped and mapped not in group_columns:
+            group_columns.append(mapped)
+            matched_phrases.append(raw_entity)
+
     for phrase, col in sorted_groups:
         if phrase in query_lower:
             # Avoid overlapping matches (e.g. if we already matched 'plant location', don't match 'plant')
@@ -603,6 +662,13 @@ def _parse_time_range(query: str) -> dict | None:
             year = int(year_match.group(1)) if year_match else now.year
             return {"type": "month", "month": m_num, "year": year, "requested": f"{m_name.title()} {year}"}
 
+    # Bare week number: "week 12", "week 12 of 2026", "week 12 2026"
+    week_match = re.search(r"\bweek\s+(\d{1,2})(?:\s+(?:of\s+)?(\d{4}))?\b", query_lower)
+    if week_match:
+        week_num = int(week_match.group(1))
+        year = int(week_match.group(2)) if week_match.group(2) else now.year
+        return {"type": "week", "week": week_num, "year": year, "requested": f"Week {week_num} {year}"}
+
     quarter_match = re.search(r"\bq([1-4])(?:\s+(\d{4}))?\b", query_lower)
     if quarter_match:
         quarter = int(quarter_match.group(1))
@@ -671,9 +737,17 @@ def _choose_time_clause(table_name: str, time_range: dict | None) -> tuple[str |
             f"EXTRACT(year FROM CAST({date_col} AS DATE)) = {time_range['year']}"
         )
     elif time_range["type"] == "quarter":
+        q = time_range["quarter"]
+        yr = time_range["year"]
+        # Prefer month-based filtering (reliable) over quarter column (format may vary)
+        # Q1 = months 1,2,3  Q2=4,5,6  Q3=7,8,9  Q4=10,11,12
+        q_start = (q - 1) * 3 + 1
+        q_end = q * 3
+        # Try quarter column first if it exists, otherwise use month extraction
+        # Use month-based approach as it's data-agnostic
         expr = (
-            f"LOWER(quarter) = 'q{time_range['quarter']}' AND "
-            f"EXTRACT(year FROM CAST({date_col} AS DATE)) = {time_range['year']}"
+            f"EXTRACT(month FROM CAST({date_col} AS DATE)) BETWEEN {q_start} AND {q_end} AND "
+            f"EXTRACT(year FROM CAST({date_col} AS DATE)) = {yr}"
         )
     elif time_range["type"] == "week":
         expr = (
@@ -711,8 +785,10 @@ def _choose_time_clause(table_name: str, time_range: dict | None) -> tuple[str |
         used_quarter = (latest_date.month - 1) // 3 + 1
         used_year = latest_date.year
         used = f"Q{used_quarter} {used_year}"
+        fq_start = (used_quarter - 1) * 3 + 1
+        fq_end = used_quarter * 3
         fallback_expr = (
-            f"LOWER(quarter) = 'q{used_quarter}' AND "
+            f"EXTRACT(month FROM CAST({date_col} AS DATE)) BETWEEN {fq_start} AND {fq_end} AND "
             f"EXTRACT(year FROM CAST({date_col} AS DATE)) = {used_year}"
         )
     else:
@@ -783,7 +859,11 @@ def _parse_structured_intent(query: str) -> dict | None:
         elif "total" in query_lower or "sum" in query_lower or "overall" in query_lower:
             aggregation = "sum"
         elif "count" in query_lower or "how many" in query_lower:
-            aggregation = "count"
+            # "how many units/revenue were produced" → SUM the metric, not COUNT rows
+            if metric in {"units", "revenue", "forecast_units", "forecast_revenue", "affected_units"}:
+                aggregation = "sum"
+            else:
+                aggregation = "count"
         elif "maximum" in query_lower or "highest" in query_lower or "biggest" in query_lower:
             aggregation = "max"
         elif "minimum" in query_lower or "lowest" in query_lower or "smallest" in query_lower:
@@ -910,14 +990,39 @@ def _build_sql_for_intent(intent: dict) -> tuple[str, dict, str] | None:
         select_clauses.append(f"COUNT(*) AS total_{col_label}")
         alias = f"total_{col_label}"
     elif aggregation == "max":
-        select_clauses.append(f"MAX({metric_expr}) AS max_{col_label}")
-        alias = f"max_{col_label}"
+        # If there's a group_by (e.g. "which model had highest"), rank by SUM and take top 1
+        if group_by:
+            select_clauses.append(f"SUM({metric_expr}) AS total_{col_label}")
+            alias = f"total_{col_label}"
+        else:
+            select_clauses.append(f"MAX({metric_expr}) AS max_{col_label}")
+            alias = f"max_{col_label}"
     elif aggregation == "min":
-        select_clauses.append(f"MIN({metric_expr}) AS min_{col_label}")
-        alias = f"min_{col_label}"
-    else:
+        # If there's a group_by, rank by SUM ASC and take bottom 1
+        if group_by:
+            select_clauses.append(f"SUM({metric_expr}) AS total_{col_label}")
+            alias = f"total_{col_label}"
+        else:
+            select_clauses.append(f"MIN({metric_expr}) AS min_{col_label}")
+            alias = f"min_{col_label}"
+    elif aggregation in {"trend", "change"}:
+        # Produce a time-series: SUM per week so the LLM sees the trajectory
         select_clauses.append(f"SUM({metric_expr}) AS total_{col_label}")
         alias = f"total_{col_label}"
+        # Force group by week for trend queries unless already grouped
+        if not group_by:
+            if "week" in table_cols:
+                select_clauses = ["week"] + select_clauses
+                group_clause = "GROUP BY week"
+                group_key = "week"
+                order_clause = "ORDER BY week"
+            else:
+                date_col = _get_date_column(table_name)
+                grain_expr = f"EXTRACT(week FROM CAST({date_col} AS DATE)) AS week_number"
+                select_clauses = [grain_expr] + select_clauses
+                group_clause = "GROUP BY week_number"
+                group_key = "week_number"
+                order_clause = "ORDER BY week_number"
 
     data_svc = get_data_service()
     table_schemas = data_svc.get_table_schemas()
@@ -953,6 +1058,10 @@ def _build_sql_for_intent(intent: dict) -> tuple[str, dict, str] | None:
     final_time_meta = {"used": [], "requested": [], "available_rows": 0}
     
     if all_time_ranges:
+        # If multiple distinct time ranges are requested (e.g. "Jan AND Feb", "this week vs last week"),
+        # we must GROUP BY the time grain so each period gets its own row, not one collapsed total.
+        needs_group_by_time = len(all_time_ranges) > 1
+
         for tr in all_time_ranges:
             expr, meta = _choose_time_clause(table_name, tr)
             if expr:
@@ -960,11 +1069,35 @@ def _build_sql_for_intent(intent: dict) -> tuple[str, dict, str] | None:
                 final_time_meta["used"].append(meta.get("used"))
                 final_time_meta["requested"].append(meta.get("requested"))
                 final_time_meta["available_rows"] += meta.get("available_rows", 0)
-        
+
         if time_exprs:
             where_clauses.append("(" + " OR ".join(time_exprs) + ")")
-            final_time_meta["used"] = " or ".join(filter(None, final_time_meta["used"]))
-            final_time_meta["requested"] = " or ".join(filter(None, final_time_meta["requested"]))
+            final_time_meta["used"] = " vs ".join(filter(None, [str(t) for t in final_time_meta["used"]]))
+            final_time_meta["requested"] = " vs ".join(filter(None, [str(t) for t in final_time_meta["requested"]]))
+
+            # Inject time-grain GROUP BY so each period appears as a separate row
+            if needs_group_by_time and not group_key:
+                time_grain = all_time_ranges[0].get("type")  # "month", "week", "quarter"
+                grain_col_map = {"week": "week", "month": "month", "quarter": "quarter", "year": "year"}
+                grain_col = grain_col_map.get(time_grain)
+                if grain_col and grain_col in table_cols:
+                    select_clauses = [grain_col] + select_clauses
+                    group_clause = f"GROUP BY {grain_col}"
+                    group_key = grain_col
+                    order_clause = f"ORDER BY {grain_col}"
+                elif time_grain in {"week", "month"}:
+                    # Fall back to extracting from the date column
+                    date_col = _get_date_column(table_name)
+                    if time_grain == "week":
+                        grain_expr = f"EXTRACT(week FROM CAST({date_col} AS DATE)) AS week_number"
+                        order_col = "week_number"
+                    else:
+                        grain_expr = f"EXTRACT(month FROM CAST({date_col} AS DATE)) AS month_number"
+                        order_col = "month_number"
+                    select_clauses = [grain_expr] + select_clauses
+                    group_clause = f"GROUP BY {order_col}"
+                    group_key = order_col
+                    order_clause = f"ORDER BY {order_col}"
     else:
         # Default latest if no time range
         final_time_meta = {"used": None, "requested": None, "available_rows": 0}
@@ -977,8 +1110,18 @@ def _build_sql_for_intent(intent: dict) -> tuple[str, dict, str] | None:
         sql = f"SELECT * FROM tasks_schedule {where_stmt} LIMIT 10".strip()
         return sql, final_time_meta, where_stmt
 
-    if aggregation in {"sum", "max"} and alias is not None and group_by:
-        order_clause = f"ORDER BY {alias} DESC LIMIT 5"
+    if aggregation in {"sum", "max", "min"} and alias is not None and group_by:
+        query_lower_raw = raw_query.lower()
+        is_single_best = any(k in query_lower_raw for k in ["highest", "lowest", "which", "what", "best", "worst", "leading"])
+        is_top_list = any(k in query_lower_raw for k in ["top", "bottom"])
+        if is_single_best and not is_top_list:
+            # "Which model had highest" → show only the #1 entity
+            sort_dir = "ASC" if aggregation == "min" or any(k in query_lower_raw for k in ["lowest", "worst", "minimum", "fewest"]) else "DESC"
+            order_clause = f"ORDER BY {alias} {sort_dir} LIMIT 1"
+        elif is_top_list:
+            order_clause = f"ORDER BY {alias} DESC LIMIT 5"
+        else:
+            order_clause = f"ORDER BY {alias} DESC"
     elif group_clause and not order_clause and group_key:
         order_clause = f"ORDER BY {group_key}"
 
@@ -1068,7 +1211,19 @@ def _build_structured_context(intent: dict, df, sql: str, time_meta: dict, row_c
         "computed_insights": computed_insights,
         "computed_results": df.to_dict(orient="records") if df is not None else [],
     }
-    return json.dumps(structured, indent=2)
+    class _SafeEncoder(json.JSONEncoder):
+        def default(self, obj):
+            import numpy as np
+            if isinstance(obj, (np.integer,)):
+                return int(obj)
+            if isinstance(obj, (np.floating,)):
+                return float(obj)
+            if isinstance(obj, np.ndarray):
+                return obj.tolist()
+            if hasattr(obj, 'item'):
+                return obj.item()
+            return super().default(obj)
+    return json.dumps(structured, indent=2, cls=_SafeEncoder)
 
 
 def _execute_structured_intent(intent: dict, signals: dict | None = None) -> dict:
@@ -1119,6 +1274,226 @@ def _execute_structured_intent(intent: dict, signals: dict | None = None) -> dic
     }
 
 
+def _is_dashboard_query(query: str) -> bool:
+    """True when the user wants a high-level overview / dashboard."""
+    q = query.lower()
+    return any(k in q for k in [
+        "dashboard", "summary", "overview", "overall", "all metrics",
+        "how are we doing", "status report", "plant status", "weekly report",
+        "show me everything", "full report",
+    ])
+
+
+def _is_actual_vs_forecast_query(query: str) -> bool:
+    """True when the user wants to compare actuals against forecast."""
+    q = query.lower()
+    has_compare = any(k in q for k in ["compare", "versus", " vs ", "against", "difference", "actual vs", "vs forecast", "forecast vs"])
+    has_actual = any(k in q for k in ["actual", "production", "units", "revenue"])
+    has_forecast = any(k in q for k in ["forecast", "predicted", "projection", "target"])
+    return (has_compare and has_forecast) or (has_actual and has_forecast)
+
+
+def execute_dashboard_query(query: str) -> str:
+    """
+    Build a full dashboard: production + revenue + alerts, all aggregated for the latest available period.
+    """
+    data_svc = get_data_service()
+    time_range = _parse_time_range(query)
+
+    # --- Production & Revenue ---
+    time_expr_prod, time_meta = _choose_time_clause("production_data", time_range)
+    prod_where = f"WHERE {time_expr_prod}" if time_expr_prod else ""
+    try:
+        prod_df = data_svc.execute_query(
+            f"SELECT SUM(units) AS total_units, SUM(revenue) AS total_revenue FROM production_data {prod_where}"
+        )
+        total_units = int(prod_df.iloc[0]["total_units"] or 0)
+        total_revenue = float(prod_df.iloc[0]["total_revenue"] or 0)
+    except Exception:
+        total_units, total_revenue = 0, 0
+
+    # --- Forecast ---
+    time_expr_fcast, _ = _choose_time_clause("forecast_data", time_range)
+    fcast_where = f"WHERE {time_expr_fcast}" if time_expr_fcast else ""
+    try:
+        fcast_df = data_svc.execute_query(
+            f"SELECT SUM(forecast_units) AS forecast_units, SUM(forecast_revenue) AS forecast_revenue FROM forecast_data {fcast_where}"
+        )
+        forecast_units = int(fcast_df.iloc[0]["forecast_units"] or 0)
+        forecast_revenue = float(fcast_df.iloc[0]["forecast_revenue"] or 0)
+    except Exception:
+        forecast_units, forecast_revenue = 0, 0
+
+    # --- Alerts ---
+    time_expr_alerts, _ = _choose_time_clause("alerts_quality", time_range)
+    alert_where = f"WHERE {time_expr_alerts}" if time_expr_alerts else ""
+    try:
+        alert_df = data_svc.execute_query(
+            f"SELECT COUNT(*) AS total_alerts, "
+            f"SUM(CASE WHEN LOWER(status)='active' THEN 1 ELSE 0 END) AS active_alerts, "
+            f"SUM(affected_units) AS affected_units "
+            f"FROM alerts_quality {alert_where}"
+        )
+        total_alerts = int(alert_df.iloc[0]["total_alerts"] or 0)
+        active_alerts = int(alert_df.iloc[0]["active_alerts"] or 0)
+        affected_units = int(alert_df.iloc[0]["affected_units"] or 0)
+    except Exception:
+        total_alerts, active_alerts, affected_units = 0, 0, 0
+
+    period = time_meta.get("used") or "All Available Data"
+    fallback_note = ""
+    if time_meta.get("fallback_occurred"):
+        fallback_note = f"\n\n> ⚠️ No data for **{time_meta['requested']}**. Showing latest available: **{period}**."
+
+    # Variance calculations
+    units_var = total_units - forecast_units
+    rev_var = total_revenue - forecast_revenue
+    units_var_str = f"+{units_var:,}" if units_var >= 0 else f"{units_var:,}"
+    rev_var_str = f"+${rev_var:,.0f}" if rev_var >= 0 else f"-${abs(rev_var):,.0f}"
+
+    summary = (
+        f"### Summary\n"
+        f"For **{period}**, production reached **{total_units:,} units** (forecast: {forecast_units:,}, variance: {units_var_str}) "
+        f"with revenue of **${total_revenue:,.0f}** (forecast: ${forecast_revenue:,.0f}, variance: {rev_var_str}). "
+        f"There are **{active_alerts} active alerts** out of {total_alerts} total, affecting **{affected_units:,} units**."
+        f"{fallback_note}"
+    )
+
+    table = (
+        "### Dashboard Overview\n"
+        "| Metric | Actual | Forecast | Variance |\n"
+        "|--------|--------|----------|----------|\n"
+        f"| Production Units | {total_units:,} | {forecast_units:,} | {units_var_str} |\n"
+        f"| Revenue | ${total_revenue:,.0f} | ${forecast_revenue:,.0f} | {rev_var_str} |\n"
+        f"| Total Alerts | {total_alerts:,} | — | — |\n"
+        f"| Active Alerts | {active_alerts:,} | — | — |\n"
+        f"| Affected Units | {affected_units:,} | — | — |"
+    )
+
+    takeaways = ["### Key Takeaways"]
+    if units_var < 0:
+        takeaways.append(f"- ⚠️ Production is **{abs(units_var):,} units below forecast** for {period}.")
+    else:
+        takeaways.append(f"- ✅ Production is **{units_var_str} units above forecast** for {period}.")
+    if active_alerts > 0:
+        pct = round(affected_units / total_units * 100, 1) if total_units > 0 else 0
+        takeaways.append(f"- **{active_alerts} active quality alerts** are affecting **{pct}%** of produced units.")
+
+    return "\n\n".join([summary, table, "\n".join(takeaways)])
+
+
+def execute_actual_vs_forecast_query(query: str) -> str:
+    """
+    Cross-table comparison: production_data (actuals) JOIN forecast_data, grouped by week.
+    """
+    data_svc = get_data_service()
+    time_range = _parse_time_range(query)
+    time_expr, time_meta = _choose_time_clause("production_data", time_range)
+    where_clause = f"WHERE p.{time_expr.replace('date', 'date')}" if time_expr else ""
+
+    # Determine which metrics the user wants
+    q = query.lower()
+    want_units = any(k in q for k in ["unit", "production", "output"])
+    want_revenue = any(k in q for k in ["revenue", "sales", "income"])
+    if not want_units and not want_revenue:
+        want_units = want_revenue = True  # Default: show both
+
+    select_parts = ["p.week"]
+    if want_units:
+        select_parts += ["COALESCE(SUM(p.units), 0) AS actual_units", "COALESCE(SUM(f.forecast_units), 0) AS forecast_units",
+                         "COALESCE(SUM(p.units), 0) - COALESCE(SUM(f.forecast_units), 0) AS units_variance"]
+    if want_revenue:
+        select_parts += ["COALESCE(SUM(p.revenue), 0) AS actual_revenue", "COALESCE(SUM(f.forecast_revenue), 0) AS forecast_revenue",
+                         "COALESCE(SUM(p.revenue), 0) - COALESCE(SUM(f.forecast_revenue), 0) AS revenue_variance"]
+
+    # Build time filter applicable to both tables
+    if time_expr:
+        fcast_time_expr, _ = _choose_time_clause("forecast_data", time_range)
+        join_where = f"WHERE ({time_expr}) OR ({fcast_time_expr})" if fcast_time_expr else f"WHERE {time_expr}"
+        # Simpler: just filter production side and LEFT JOIN forecast
+        p_where = f"WHERE {time_expr}"
+    else:
+        p_where = ""
+
+    sql = f"""
+        SELECT {', '.join(select_parts)}
+        FROM production_data p
+        LEFT JOIN forecast_data f ON p.week = f.week AND p.plant = f.plant
+        {p_where}
+        GROUP BY p.week
+        ORDER BY p.week
+    """.strip()
+
+    try:
+        df = data_svc.execute_query(sql)
+    except Exception as e:
+        logger.error(f"Actual vs forecast query failed: {e}")
+        return None
+
+    if df.empty:
+        return (
+            f"### Summary\nNo data found for {time_meta.get('requested', 'the requested period')}. "
+            "Try adjusting the time range."
+        )
+
+    period = time_meta.get("used") or "All Available Data"
+    fallback_note = ""
+    if time_meta.get("fallback_occurred"):
+        fallback_note = f"\n> ⚠️ No data for **{time_meta['requested']}**. Showing latest available: **{period}**."
+
+    # Summary stats
+    summary_lines = [f"### Summary", f"Actual vs Forecast comparison for **{period}**:{fallback_note}"]
+    if want_units and "actual_units" in df.columns:
+        total_actual = int(df["actual_units"].sum())
+        total_forecast = int(df["forecast_units"].sum())
+        variance = total_actual - total_forecast
+        var_str = f"+{variance:,}" if variance >= 0 else f"{variance:,}"
+        summary_lines.append(
+            f"Total actual production: **{total_actual:,} units** vs forecast **{total_forecast:,} units** (variance: **{var_str}**)."
+        )
+    if want_revenue and "actual_revenue" in df.columns:
+        total_rev = float(df["actual_revenue"].sum())
+        total_frev = float(df["forecast_revenue"].sum())
+        rev_var = total_rev - total_frev
+        rev_var_str = f"+${rev_var:,.0f}" if rev_var >= 0 else f"-${abs(rev_var):,.0f}"
+        summary_lines.append(
+            f"Total actual revenue: **${total_rev:,.0f}** vs forecast **${total_frev:,.0f}** (variance: **{rev_var_str}**)."
+        )
+
+    # Table
+    headers = [c.replace("_", " ").title() for c in df.columns]
+    table_lines = ["### Actual vs Forecast by Week",
+                   "| " + " | ".join(headers) + " |",
+                   "|" + "---|" * len(headers)]
+    for _, row in df.iterrows():
+        cells = []
+        for col in df.columns:
+            v = row[col]
+            if "revenue" in col:
+                cells.append(f"${float(v):,.0f}")
+            elif isinstance(v, (int, float)):
+                cells.append(f"{float(v):,.0f}")
+            else:
+                cells.append(str(v))
+        table_lines.append("| " + " | ".join(cells) + " |")
+
+    # Key takeaways
+    takeaways = ["### Key Takeaways"]
+    if want_units and "units_variance" in df.columns:
+        below_weeks = df[df["units_variance"] < 0]
+        if not below_weeks.empty:
+            takeaways.append(f"- Production fell short of forecast in **{len(below_weeks)} week(s)** — review capacity constraints.")
+        else:
+            takeaways.append("- ✅ Actual production met or exceeded forecast every week in this period.")
+    if want_revenue and "revenue_variance" in df.columns:
+        below_rev = df[df["revenue_variance"] < 0]
+        if not below_rev.empty:
+            takeaways.append(f"- Revenue underperformed forecast in **{len(below_rev)} week(s)**.")
+
+    return "\n\n".join(["\n".join(summary_lines), "\n".join(table_lines), "\n".join(takeaways)])
+
+
+
 def detect_structured_query(query: str) -> str | None:
     """Detect whether the question can be answered with a structured data query."""
     query_lower = query.lower()
@@ -1131,6 +1506,18 @@ def detect_structured_query(query: str) -> str | None:
 
 def execute_structured_query(query: str) -> str | None:
     """Run a safe structured query for supported data-first requests."""
+    # ── Dashboard / summary intent ──
+    if _is_dashboard_query(query):
+        logger.info("Routing to dashboard handler")
+        return execute_dashboard_query(query)
+
+    # ── Actual vs Forecast cross-table comparison ──
+    if _is_actual_vs_forecast_query(query):
+        logger.info("Routing to actual-vs-forecast handler")
+        result = execute_actual_vs_forecast_query(query)
+        if result:
+            return result
+
     intent_key = detect_structured_query(query)
     if intent_key == "highest_issues_by_plant":
         data_svc = get_data_service()
@@ -1179,15 +1566,20 @@ def execute_structured_query(query: str) -> str | None:
         table_md = "\n".join(table_lines)
 
         response = [
-            f"SUMMARY The plant with the highest number of active issues is **{top['plant']}**, with **{int(top['active_issues'])}** active issue(s) and **{int(top['total_issues'])}** total issue(s).",
+            f"### Summary",
+            f"The plant with the highest number of active issues during **{time_meta.get('used') or 'All Time'}** is **{top['plant']}**, "
+            f"recording **{int(top['active_issues'])}** active issue(s) out of **{int(top['total_issues'])}** total issues logged. "
+            f"This indicates elevated quality risk at this facility and warrants immediate operational review.",
             "",
-            "### Quality issues by plant",
+            "### Quality Issues by Plant",
             table_md,
             time_context_msg,
             "",
-            "Key Takeaways:",
-            f"- **{top['plant']}** has the most active issues in the period: {time_meta.get('used') or 'All Time'}.",
-            "- This answer is based directly on the actual dataset and not on invented values.",
+            "### Key Takeaways",
+            f"- **{top['plant']}** leads all plants in active quality issues for the period **{time_meta.get('used') or 'All Time'}**, "
+            f"with **{int(top['active_issues'])}** active and **{int(top['total_issues'])}** total issues recorded.",
+            "- Active issues represent unresolved quality alerts that may be impacting production output.",
+            "- Consider prioritising corrective action plans for the departments driving the highest alert volumes at this plant.",
         ]
         return "\n".join(response)
 
@@ -1203,10 +1595,12 @@ def execute_structured_query(query: str) -> str | None:
     execution = _execute_structured_intent(structured_intent, signals=signals)
     
     if execution["status"] == "NO_DATA":
-        # Hard stop / Python response for empty data
+        req = execution["time_meta"].get("requested", "the requested period")
         return (
-            f"SUMMARY No records were found for {execution['time_meta'].get('requested', 'the requested period')}. "
-            "The dataset does not contain any matching rows for that selection."
+            f"### Summary\n"
+            f"No records were found for **{req}**. "
+            f"The dataset does not contain any matching entries for this selection. "
+            f"Try adjusting the time range or filter criteria."
         )
     
     if execution["status"] != "OK":
@@ -1223,43 +1617,122 @@ def execute_structured_query(query: str) -> str | None:
         python_part = "SUMMARY Data retrieved but formatting failed."
 
     # --- SAFE INSIGHTS LAYER (LLM with Retry Logic) ---
-    # Safe Context: Remove raw results to prevent re-aggregation hallucinations
+    # Build a grounded plain-English result for the LLM.
+    # We pass the actual computed figures so it doesn't hallucinate "no data".
+    metric_label = structured_data["metric"].replace("_", " ")
+    time_label = structured_data.get("time_range") or "the selected period"
+    filters_applied = structured_intent.get("filters", {})
+
+    result_lines = []
+    if not df.empty:
+        if df.shape[0] == 1:
+            # Single row result: Include all columns so LLM knows which entity (model/plant) it is
+            row = df.iloc[0]
+            parts = []
+            for col in df.columns:
+                v = row[col]
+                try:
+                    v_fmt = f"${float(v):,.0f}" if "revenue" in col.lower() else (f"{float(v):,.0f}" if isinstance(v, (int, float)) else str(v))
+                except Exception:
+                    v_fmt = str(v)
+                parts.append(f"{col.replace('_',' ').title()}: {v_fmt}")
+            result_lines.append("- " + ", ".join(parts))
+            
+            if filters_applied:
+                result_lines.append(f"- Filters applied: {filters_applied}")
+        else:
+            for _, row in df.iterrows():
+                parts = []
+                for col in df.columns:
+                    v = row[col]
+                    try:
+                        v_fmt = f"${float(v):,.0f}" if "revenue" in col.lower() else (f"{float(v):,.0f}" if isinstance(v, (int, float)) else str(v))
+                    except Exception:
+                        v_fmt = str(v)
+                    parts.append(f"{col.replace('_',' ').title()}: {v_fmt}")
+                result_lines.append("- " + ", ".join(parts))
+
     safe_context = {
-        "metric": structured_data["metric"],
-        "summary": structured_data["summary"],
-        "insights": structured_data["computed_insights"],
-        "time_range": structured_data["time_range"]
+        "metric": metric_label,
+        "time_range": time_label,
+        "filters": str(filters_applied) if filters_applied else "none",
+        "computed_results": "\n".join(result_lines) if result_lines else "No data.",
+        "insights": structured_data.get("computed_insights", []),
     }
     
+    # Prompt instruction injected into result_context so LLM writes richer, formatted output
+    insights_prompt = (
+        "You are a senior manufacturing data analyst. Write a concise executive report using ONLY the computed_results provided.\n\n"
+        "RULES (strictly enforced):\n"
+        "1. Every point MUST be a bullet point starting with a dash (-).\n"
+        "2. Every bullet MUST contain a specific figure or entity from computed_results — no generic sentences.\n"
+        "3. Explain what the numbers MEAN for operations (e.g., impact on capacity, risk level), don't just repeat them.\n"
+        "4. Do NOT write a 'Summary' or 'Introduction' section.\n"
+        "5. Bold all entity names and numeric values.\n\n"
+        "FORMAT (use exactly these two markdown headings):\n\n"
+        "### Insights\n"
+        "- [3 specific bullets with bolded figures]\n\n"
+        "### Key Takeaways\n"
+        "- [2-3 actionable bullets with bolded figures]"
+    )
+    safe_context["instructions"] = insights_prompt
+
     for attempt in range(2):
         insights_response = llm_service.generate_explanation(
             user_query=query,
             result_context=json.dumps(safe_context, indent=2),
-            data_context="", # Strictly no schema
+            data_context="",
         )
         
-        # Structure Check
-        has_structure = "INSIGHTS" in insights_response and "KEY TAKEAWAYS" in insights_response
-        
-        # Numeric validation is intentionally skipped here — python_part owns accuracy.
-        # We only enforce response structure.
-        is_valid = True  # numeric check removed intentionally
-        
-        if has_structure and is_valid:
-            # Clean up and finalize
+        # Case-insensitive structure check
+        response_upper = insights_response.upper()
+        has_structure = ("INSIGHTS" in response_upper) and ("TAKEAWAY" in response_upper)
+        has_bullets = insights_response.count("\n- ") >= 3 or insights_response.count("\n* ") >= 3 or insights_response.startswith("- ")
+
+        if has_structure and has_bullets:
             final_insights = insights_response
-            if "SUMMARY" in final_insights:
-                final_insights = final_insights.split("SUMMARY")[-1].split("\n\n", 1)[-1]
+            
+            # 1. Strip everything before the first section heading
+            for section in ["### Insights", "## Insights", "Insights", "### Insights\n", "INSIGHTS"]:
+                if section in final_insights:
+                    final_insights = final_insights.split(section, 1)[-1]
+                    final_insights = "### Insights\n" + final_insights
+                    break
+            
+            # 2. Normalise Takeaways heading
+            for section in ["### Key Takeaways", "## Key Takeaways", "Key Takeaways", "KEY TAKEAWAYS", "### Key Takeaway"]:
+                if section in final_insights and section != "### Key Takeaways":
+                    final_insights = final_insights.replace(section, "### Key Takeaways")
+                    break
+            
+            # 3. Ensure bullet consistency (replace * with -)
+            final_insights = final_insights.replace("\n* ", "\n- ")
+            if final_insights.startswith("* "):
+                final_insights = "- " + final_insights[2:]
+
+            # Strip any SUMMARY section the LLM may have prepended
+            for marker in ["## Summary", "### Summary", "SUMMARY\n", "SUMMARY "]:
+                if marker in final_insights:
+                    remainder = final_insights.split(marker, 1)[-1]
+                    if "\n\n" in remainder:
+                        final_insights = remainder.split("\n\n", 1)[-1]
+                    break
+            
+            # If LLM returned no markdown headings at all, wrap it
+            if not any(h in final_insights for h in ["### Insights", "## Insights", "### Key"]):
+                final_insights = "### Insights & Key Takeaways\n\n" + final_insights.strip()
             break
         else:
-            logger.warning(f"LLM validation failed on attempt {attempt+1}. Regenerating...")
+            logger.warning(f"LLM structure check failed on attempt {attempt+1}. Regenerating...")
 
     if not final_insights:
         final_insights = (
             "### Insights\n"
-            "- Advanced insights are unavailable for this specific data slice due to validation constraints.\n\n"
+            "- Detailed insights could not be generated for this data slice. "
+            "The figures in the Data Breakdown table above are accurate and deterministically computed.\n\n"
             "### Key Takeaways\n"
-            "- Please refer to the deterministic Data Breakdown table above for accurate figures."
+            "- Refer to the **Data Breakdown** table for the authoritative figures.\n"
+            "- If you need deeper analysis, try a more specific query such as filtering by plant, model, or time period."
         )
 
     # --- EXPLAINABILITY LAYER ---
