@@ -27,38 +27,32 @@ class DataService:
         self._loaded = False
 
     def load_data(self):
-        """Load Excel files into DuckDB tables."""
+        """Load CSV and Excel files into DuckDB tables."""
         try:
-            # ── Load Sales by Models ──
-            models_path = self.data_dir / "Sales by Models.xlsx"
-            if models_path.exists():
-                df_models = pd.read_excel(models_path, engine="openpyxl")
-                # Clean column names: cast to string, strip whitespace, lowercase, replace spaces with underscores
-                df_models.columns = [
-                    str(col).strip().lower().replace(" ", "_").replace("(", "").replace(")", "")
-                    for col in df_models.columns
-                ]
-                self.conn.execute("DROP TABLE IF EXISTS sales_by_models")
-                self.conn.execute("CREATE TABLE sales_by_models AS SELECT * FROM df_models")
-                row_count = self.conn.execute("SELECT COUNT(*) FROM sales_by_models").fetchone()[0]
-                logger.info(f"Loaded sales_by_models: {row_count} rows")
-            else:
-                logger.warning(f"File not found: {models_path}")
+            files = [
+                path for path in self.data_dir.iterdir()
+                if path.suffix.lower() in {".csv", ".xlsx", ".xls"}
+            ]
 
-            # ── Load Sales by Plant ──
-            plant_path = self.data_dir / "Sales by Plant.xlsx"
-            if plant_path.exists():
-                df_plant = pd.read_excel(plant_path, engine="openpyxl")
-                df_plant.columns = [
+            if not files:
+                logger.warning(f"No CSV or Excel data files found in {self.data_dir}")
+
+            for path in files:
+                table_name = str(path.stem).strip().lower().replace(" ", "_").replace("-", "_")
+                if path.suffix.lower() == ".csv":
+                    df = pd.read_csv(path)
+                else:
+                    df = pd.read_excel(path, engine="openpyxl")
+
+                df.columns = [
                     str(col).strip().lower().replace(" ", "_").replace("(", "").replace(")", "")
-                    for col in df_plant.columns
+                    for col in df.columns
                 ]
-                self.conn.execute("DROP TABLE IF EXISTS sales_by_plant")
-                self.conn.execute("CREATE TABLE sales_by_plant AS SELECT * FROM df_plant")
-                row_count = self.conn.execute("SELECT COUNT(*) FROM sales_by_plant").fetchone()[0]
-                logger.info(f"Loaded sales_by_plant: {row_count} rows")
-            else:
-                logger.warning(f"File not found: {plant_path}")
+
+                self.conn.execute(f"DROP TABLE IF EXISTS {table_name}")
+                self.conn.execute(f"CREATE TABLE {table_name} AS SELECT * FROM df")
+                row_count = self.conn.execute(f"SELECT COUNT(*) FROM {table_name}").fetchone()[0]
+                logger.info(f"Loaded {table_name}: {row_count} rows from {path.name}")
 
             self._loaded = True
             logger.info("Data service initialized successfully")
