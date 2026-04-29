@@ -1,4 +1,20 @@
 Date,Week,Plant,Department,Issue_Type,Severity,Affected_Units,Status
+2024-02-03,W05,Dearborn,Assembly,Machine Failure,High,18,Active
+2024-02-07,W06,Chicago,Paint Shop,Quality Issue,Medium,10,Resolved
+2024-02-11,W06,Detroit,Body Shop,Equipment Failure,Low,6,Resolved
+2024-02-15,W07,Dearborn,Logistics,Safety Issue,Medium,9,Active
+2024-02-21,W08,Chicago,Assembly,Machine Failure,High,20,Active
+2024-03-02,W09,Detroit,Paint Shop,Quality Issue,Low,7,Resolved
+2024-03-06,W10,Dearborn,Body Shop,Equipment Failure,Medium,13,Active
+2024-03-10,W10,Chicago,Assembly,Quality Issue,High,16,Active
+2024-03-15,W11,Detroit,Logistics,Safety Issue,High,8,Active
+2024-03-22,W12,Dearborn,Paint Shop,Machine Failure,Medium,14,Resolved
+2024-04-01,W13,Chicago,Body Shop,Quality Issue,High,17,Active
+2024-04-05,W14,Detroit,Assembly,Machine Failure,High,22,Active
+2024-04-09,W14,Dearborn,Quality Check,Quality Issue,Low,5,Resolved
+2024-04-14,W15,Chicago,Logistics,Equipment Failure,Medium,12,Active
+2024-04-20,W16,Detroit,Paint Shop,Quality Issue,Medium,11,Resolved
+2024-04-25,W17,Dearborn,Assembly,Safety Issue,High,9,Active
 2024-05-01,W18,Dearborn,Body Shop,Quality Issue,High,10,Active
 2024-05-06,W19,Chicago,Body Shop,Quality Issue,Medium,12,Resolved
 2024-05-11,W19,Dearborn,Body Shop,Quality Issue,High,15,Active

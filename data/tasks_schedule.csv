@@ -1,21 +1,33 @@
 Task_ID,Date,Week,Plant,Department,Task_Name,Task_Type,Priority,Status,Assigned_To
-T1,2024-05-01,W18,Dearborn,Body Shop,Body Shop Task 1,Maintenance,High,Completed,Team 1
-T2,2024-05-02,W18,Chicago,Paint Shop,Paint Shop Task 2,Production,Medium,Scheduled,Team 2
-T3,2024-05-03,W18,Dearborn,Assembly,Assembly Task 3,Production,Medium,Completed,Team 3
-T4,2024-05-04,W18,Chicago,Quality Check,Quality Check Task 4,Maintenance,Medium,Scheduled,Team 1
-T5,2024-05-05,W18,Dearborn,Logistics,Logistics Task 5,Production,High,Completed,Team 2
-T6,2024-05-06,W19,Chicago,Body Shop,Body Shop Task 6,Production,Medium,Scheduled,Team 3
-T7,2024-05-07,W19,Dearborn,Paint Shop,Paint Shop Task 7,Maintenance,Medium,Completed,Team 1
-T8,2024-05-08,W19,Chicago,Assembly,Assembly Task 8,Production,Medium,Scheduled,Team 2
-T9,2024-05-09,W19,Dearborn,Quality Check,Quality Check Task 9,Production,High,Completed,Team 3
-T10,2024-05-10,W19,Chicago,Logistics,Logistics Task 10,Maintenance,Medium,Scheduled,Team 1
-T11,2024-05-11,W19,Dearborn,Body Shop,Body Shop Task 11,Production,Medium,Completed,Team 2
-T12,2024-05-12,W19,Chicago,Paint Shop,Paint Shop Task 12,Production,Medium,Scheduled,Team 3
-T13,2024-05-13,W20,Dearborn,Assembly,Assembly Task 13,Maintenance,High,Completed,Team 1
-T14,2024-05-14,W20,Chicago,Quality Check,Quality Check Task 14,Production,Medium,Scheduled,Team 2
-T15,2024-05-15,W20,Dearborn,Logistics,Logistics Task 15,Production,Medium,Completed,Team 3
-T16,2024-05-16,W20,Chicago,Body Shop,Body Shop Task 16,Maintenance,Medium,Scheduled,Team 1
-T17,2024-05-17,W20,Dearborn,Paint Shop,Paint Shop Task 17,Production,High,Completed,Team 2
-T18,2024-05-18,W20,Chicago,Assembly,Assembly Task 18,Production,Medium,Scheduled,Team 3
-T19,2024-05-19,W20,Dearborn,Quality Check,Quality Check Task 19,Maintenance,Medium,Completed,Team 1
-T20,2024-05-20,W21,Chicago,Logistics,Logistics Task 20,Production,Medium,Scheduled,Team 2
+T1,2024-02-03,W05,Dearborn,Assembly,Conveyor Belt Calibration,Maintenance,High,Completed,Team 1
+T2,2024-02-06,W06,Chicago,Paint Shop,Paint Quality Inspection,Inspection,Medium,Completed,Team 2
+T3,2024-02-10,W06,Detroit,Body Shop,Welding Line Repair,Maintenance,High,In Progress,Team 3
+T4,2024-02-14,W07,Dearborn,Logistics,Inventory Audit,Audit,Medium,Completed,Team 1
+T5,2024-02-18,W07,Chicago,Assembly,Shift Production Setup,Production,Medium,Scheduled,Team 2
+T6,2024-03-02,W09,Detroit,Paint Shop,Coating Thickness Check,Inspection,Low,Completed,Team 3
+T7,2024-03-06,W10,Dearborn,Body Shop,Hydraulic Press Maintenance,Maintenance,High,Delayed,Team 1
+T8,2024-03-10,W10,Chicago,Assembly,Assembly Line Optimization,Production,Medium,Completed,Team 2
+T9,2024-03-15,W11,Detroit,Logistics,Supply Chain Validation,Audit,Medium,In Progress,Team 3
+T10,2024-03-22,W12,Dearborn,Quality Check,Defect Rate Analysis,Inspection,High,Completed,Team 1
+T11,2024-04-01,W13,Chicago,Body Shop,Chassis Alignment Fix,Maintenance,High,Completed,Team 2
+T12,2024-04-05,W14,Detroit,Assembly,Robot Arm Calibration,Maintenance,High,Delayed,Team 3
+T13,2024-04-09,W14,Dearborn,Quality Check,Final Inspection Cycle,Inspection,Medium,Completed,Team 1
+T14,2024-04-14,W15,Chicago,Logistics,Warehouse Optimization,Audit,Low,Scheduled,Team 2
+T15,2024-04-20,W16,Detroit,Paint Shop,Paint Booth Cleaning,Maintenance,Medium,Completed,Team 3
+T16,2024-04-25,W17,Dearborn,Assembly,Line Speed Adjustment,Production,High,In Progress,Team 1
+T17,2024-05-01,W18,Dearborn,Body Shop,Frame Welding Check,Inspection,High,Completed,Team 2
+T18,2024-05-06,W19,Chicago,Paint Shop,Color Consistency Audit,Audit,Medium,Scheduled,Team 3
+T19,2024-05-11,W19,Dearborn,Assembly,Engine Mount Installation,Production,High,Completed,Team 1
+T20,2024-05-16,W20,Chicago,Quality Check,Defect Tracking Review,Inspection,Medium,In Progress,Team 2
+T21,2024-05-20,W21,Detroit,Assembly,Motor Failure Diagnosis,Maintenance,High,Delayed,Team 3
+T22,2024-05-24,W21,Chicago,Paint Shop,Surface Finish Inspection,Inspection,Low,Completed,Team 1
+T23,2024-06-02,W22,Dearborn,Body Shop,Machine Vibration Analysis,Maintenance,High,In Progress,Team 2
+T24,2024-06-05,W23,Detroit,Assembly,Assembly Bottleneck Fix,Production,High,Delayed,Team 3
+T25,2024-06-08,W23,Chicago,Paint Shop,Paint Equipment Upgrade,Maintenance,Medium,Scheduled,Team 1
+T26,2024-06-10,W23,Dearborn,Quality Check,Quality Audit Cycle,Audit,High,Completed,Team 2
+T27,2024-06-13,W24,Detroit,Assembly,Line Balancing Task,Production,Medium,Completed,Team 3
+T28,2024-06-16,W24,Chicago,Paint Shop,Coating Defect Fix,Maintenance,High,In Progress,Team 1
+T29,2024-06-21,W25,Detroit,Assembly,Safety Compliance Check,Inspection,High,Completed,Team 2
+T30,2024-06-24,W25,Chicago,Logistics,Distribution Delay Analysis,Audit,Medium,Delayed,Team 3
+T31,2024-06-27,W25,Dearborn,Body Shop,Equipment Replacement Task,Maintenance,High,Scheduled,Team 1
+T32,2024-06-29,W26,Detroit,Assembly,Production Ramp-up Setup,Production,High,Scheduled,Team 2
