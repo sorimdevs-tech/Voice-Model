@@ -55,6 +55,9 @@ const useChatStore = create((set, get) => ({
   streamingText: '',
   activeStreamId: null,
   isSyncing: false,
+  currentDashboardData: null,
+
+  setDashboardData: (data) => set({ currentDashboardData: data }),
 
   // ---- Helpers ----
   syncWithBackend: async () => {

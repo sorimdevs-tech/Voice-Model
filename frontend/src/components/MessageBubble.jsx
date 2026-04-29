@@ -9,6 +9,7 @@ import {
 import { toast } from 'react-hot-toast';
 
 import UserAvatar from './UserAvatar';
+import Dashboard from './Dashboard';
 
 /**
  * Strict message schema expected:
@@ -166,6 +167,35 @@ export default function MessageBubble({ message, onRetry, onRegenerate, onEdit, 
                       <table {...props} />
                     </div>
                   ),
+                  code({ node, inline, className, children, ...props }) {
+                    const match = /language-(\w+)/.exec(className || '');
+                    const isDashboard = match?.[1] === 'dashboard';
+                    
+                    if (!inline && isDashboard) {
+                      try {
+                        const content = String(children).trim();
+                        const dashboardData = JSON.parse(content);
+                        return (
+                          <div className="my-6 w-full max-w-full overflow-hidden">
+                            <Dashboard data={dashboardData} />
+                          </div>
+                        );
+                      } catch (e) {
+                        return (
+                          <div className="p-4 my-4 bg-red-900/20 border border-red-500/50 rounded-lg text-red-200 text-xs">
+                            <div className="font-bold mb-1">Dashboard Render Error</div>
+                            {e.message}
+                          </div>
+                        );
+                      }
+                    }
+                    
+                    return (
+                      <code className={className} {...props}>
+                        {children}
+                      </code>
+                    );
+                  }
                 }}
               >
                 {content || ''}

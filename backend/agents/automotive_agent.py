@@ -18,64 +18,62 @@ from services import llm_service
 
 logger = logging.getLogger("voxa.agent")
 
-# ── Intent Categories ──
+# ── Intent Categories (Recipes) ──
 INTENTS = {
-    "weekly_schedule": {
-        "keywords": ["schedule", "this week", "weekly", "week's schedule", "production schedule",
-                      "what's happening", "planned", "upcoming"],
-        "description": "Plant schedule for the current/upcoming week",
+    "weekly_dashboard": {
+        "keywords": ["dashboard", "weekly", "this week", "week's report", "how are we doing this week"],
+        "description": "Weekly operational health check",
     },
-    "quarter_comparison": {
-        "keywords": ["quarter", "quarterly", "q1", "q2", "q3", "q4", "compared to last quarter",
-                      "qoq", "quarter over quarter", "this quarter", "last quarter", "previous quarter"],
-        "description": "Quarter-over-quarter performance comparison",
+    "forecast_dashboard": {
+        "keywords": ["forecast", "next week", "planned", "targets", "projection"],
+        "description": "Production and revenue forecast",
     },
-    "week_broadcast": {
-        "keywords": ["broadcast", "next week", "previous week", "week over week", "wow",
-                      "compared to last week", "week comparison", "weekly comparison", "weekly trend"],
-        "description": "Week-over-week data comparison and broadcast",
+    "quarterly_dashboard": {
+        "keywords": ["quarter", "last quarter", "q1", "q2", "q3", "q4", "quarterly"],
+        "description": "Quarterly performance review",
     },
-    "sales_by_model": {
-        "keywords": ["model", "vehicle", "car", "top selling", "best seller", "worst",
-                      "which model", "suv", "sedan", "hatchback", "variant"],
-        "description": "Vehicle model-specific sales analysis",
+    "production_summary": {
+        "keywords": ["production summary", "units summary", "revenue summary", "total units", "output"],
+        "description": "Deep dive into production metrics",
     },
-    "sales_by_plant": {
-        "keywords": ["plant", "factory", "location", "facility", "which plant",
-                      "plant performance", "production", "output", "capacity"],
-        "description": "Plant-level production and sales data",
+    "plant_performance": {
+        "keywords": ["highest production", "best plant", "worst plant", "plant ranking", "top plant"],
+        "description": "Plant-level performance ranking",
     },
-    "sales_by_region": {
-        "keywords": ["region", "country", "india", "usa", "europe", "city", "geography",
-                      "where", "market", "territory"],
-        "description": "Regional sales breakdown",
+    "department_performance": {
+        "keywords": ["best department", "performing best", "department-wise", "dept"],
+        "description": "Department-level performance analysis",
     },
-    "revenue_analysis": {
-        "keywords": ["revenue", "income", "profit", "earnings", "money", "financial",
-                      "total sales", "turnover", "growth"],
-        "description": "Revenue and financial analysis",
+    "model_performance": {
+        "keywords": ["model-wise", "which model", "best selling model", "f-150", "mustang"],
+        "description": "Vehicle model production analysis",
     },
     "trend_analysis": {
-        "keywords": ["trend", "over time", "growth", "decline", "pattern", "forecast",
-                      "prediction", "projection", "historically"],
-        "description": "Trend analysis and patterns",
+        "keywords": ["trend", "over time", "historically", "growth", "decline"],
+        "description": "Performance trends over periods",
     },
-    "comparison": {
-        "keywords": ["compare", "versus", "vs", "difference", "better", "worse",
-                      "against", "benchmark"],
-        "description": "Comparative analysis between entities",
+    "task_management": {
+        "keywords": ["tasks", "scheduled", "today's tasks", "pending", "assigned", "priority"],
+        "description": "Task and operation schedule",
+    },
+    "alerts_quality": {
+        "keywords": ["alerts", "issues", "severity", "quality", "problem", "high severity"],
+        "description": "Quality issues and critical alerts",
+    },
+    "comparison_analysis": {
+        "keywords": ["compare", "vs", "versus", "comparison", "forecast vs actual"],
+        "description": "Comparative analysis between periods or datasets",
     },
     "general": {
         "keywords": [],
-        "description": "General automotive/plant question",
+        "description": "General plant dashboard query",
     },
 }
 
 
 def detect_intent(query: str) -> str:
     """
-    Simple keyword-based intent detection.
-    Returns the best matching intent category.
+    Enhanced intent detection for the 20 recipe types.
     """
     query_lower = query.lower()
     scores = {}
@@ -96,60 +94,34 @@ def detect_intent(query: str) -> str:
 def build_data_context(intent: str, query: str) -> str:
     """
     Build the data context string based on detected intent.
-    Pulls relevant data from DuckDB and formats it for the LLM.
+    Pulls relevant data from all 4 DuckDB tables.
     """
     data_svc = get_data_service()
     context_parts = []
 
     try:
-        # Always include table schemas so LLM knows what data is available
+        # Table Schema Context
         context_parts.append("## Data Schema")
         context_parts.append(data_svc.get_table_schemas_text())
 
-        # For small datasets, include ALL data so LLM can do precise analysis
-        context_parts.append("\n## Full Dataset")
+        # Full Data Context (for all 4 tables)
+        context_parts.append("\n## Data Records")
         context_parts.append(data_svc.get_full_data_dump())
 
-        # Add current date context for time-relative queries
-        now = datetime.now()
+        # Time Context
+        # Using 2024-05-15 as 'today' for consistency with sample data
+        today = datetime(2024, 5, 15) 
         context_parts.append(f"\n## Time Context")
-        context_parts.append(f"- Current date: {now.strftime('%Y-%m-%d (%A)')}")
-        context_parts.append(f"- Current week: Week {now.isocalendar()[1]} of {now.year}")
-        context_parts.append(f"- Current quarter: Q{(now.month - 1) // 3 + 1} {now.year}")
-        context_parts.append(f"- Previous quarter: Q{((now.month - 4) // 3 + 1) if now.month > 3 else 4} {now.year if now.month > 3 else now.year - 1}")
+        context_parts.append(f"- Current date (Simulated): {today.strftime('%Y-%m-%d (%A)')}")
+        context_parts.append(f"- Current week: W{today.isocalendar()[1]}")
+        context_parts.append(f"- Current month: {today.month}")
+        context_parts.append(f"- Current quarter: Q{(today.month - 1) // 3 + 1}")
 
-        # Add intent-specific instructions
-        context_parts.append(f"\n## Detected Intent: {intent}")
-        if intent in INTENTS:
-            context_parts.append(f"Description: {INTENTS[intent]['description']}")
-
-        if intent == "weekly_schedule":
-            context_parts.append("""
-### Response Instructions:
-- Present the weekly schedule as a TABLE with columns: Day, Status, Models Planned, Target Units, Notes
-- Group data by days of the week (Monday through Friday)
-- If exact weekly schedule data isn't available, derive a realistic schedule from the sales/production data
-- Show shift information if available
-- Include a summary of total planned production for the week
-""")
-        elif intent == "quarter_comparison":
-            context_parts.append("""
-                    ### Response Instructions:
-                    - Create a comparison TABLE showing current quarter vs previous quarter
-                    - Include metrics: Total Sales, Revenue, Units Produced, Top Model, Growth %
-                    - Calculate percentage changes between quarters
-                    - Highlight positive/negative trends with ↑/↓ arrows
-                    - Add a brief analysis of what drove the changes
-                    """)
-        elif intent == "week_broadcast":
-            context_parts.append("""
-                    ### Response Instructions:
-                    - Create a week-over-week comparison TABLE
-                    - Show next week's projected data vs previous week's actual data
-                    - Include: Production targets, Sales forecast, Key models, any alerts
-                    - Highlight significant changes (>10% variance)
-                    - Add broadcast-style announcements for the plant floor
-                    """)
+        # Relationship Context
+        context_parts.append("\n## Operational Context & Relationships")
+        context_parts.append("- Link `alerts_quality` to `production_data` by Department and Week.")
+        context_parts.append("- Link `tasks_schedule` to `production_data` by Department and Week.")
+        context_parts.append("- Correlate High Severity alerts with production dips if applicable.")
 
     except Exception as e:
         logger.error(f"Error building data context: {e}")

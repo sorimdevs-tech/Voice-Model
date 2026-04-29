@@ -9,6 +9,7 @@ import MessageBubble, { TypingIndicator } from './MessageBubble';
 import VoiceButton from './VoiceButton';
 import TextInput from './TextInput';
 import WelcomeScreen from './WelcomeScreen';
+import Dashboard from './Dashboard';
 
 /**
  * Returns true if user is scrolled near the bottom (within 150px).
@@ -39,6 +40,8 @@ export default function ChatWindow() {
   const setLoading           = useChatStore((s) => s.setLoading);
   const createConversation   = useChatStore((s) => s.createConversation);
   const removeMessage        = useChatStore((s) => s.removeMessage);
+  const currentDashboardData = useChatStore((s) => s.currentDashboardData);
+  const setDashboardData     = useChatStore((s) => s.setDashboardData);
 
   /* ── Voice store selectors ── */
   const isRecording    = useVoiceStore((s) => s.isRecording);
@@ -54,6 +57,33 @@ export default function ChatWindow() {
   const activeConversation = activeConversationId ? conversations[activeConversationId] : null;
   const messages   = activeConversation?.messages || [];
   const hasMessages = messages.length > 0;
+
+  /* ── Dashboard Parsing Logic ── */
+  useEffect(() => {
+    // When streaming finishes or a new message is added, check for dashboard JSON
+    const lastMessage = messages[messages.length - 1];
+    const textToParse = isStreaming ? streamingText : lastMessage?.content;
+
+    if (textToParse) {
+      const match = /```dashboard\s*([\s\S]*?)\s*```/.exec(textToParse);
+      if (match && match[1]) {
+        try {
+          const data = JSON.parse(match[1].trim());
+          setDashboardData(data);
+        } catch (e) {
+          // Partial JSON during streaming, ignore
+        }
+      }
+    }
+  }, [messages, streamingText, isStreaming, setDashboardData]);
+
+  /* ── Initial Load Logic ── */
+  useEffect(() => {
+    if (!hasMessages && !isLoading && !isStreaming) {
+      // Auto-fetch weekly report on first visit
+      handleTextSend("Provide dashboard report for this week");
+    }
+  }, []);
 
   /*
    * Smart auto-scroll: only scrolls to the bottom when the user is already
@@ -253,109 +283,79 @@ export default function ChatWindow() {
     );
   }, [activeConversationId, addMessage, setLoading, startStreaming, appendToken, finalizeStream, cancelStream, handleCancelStream]);
 
-  // Welcome screen (no messages)
-  if (!hasMessages) {
-    return (
-      <div className="flex flex-col flex-1 h-full overflow-hidden" id="chat-window">
-        <div className="flex-1 overflow-y-auto overflow-x-hidden flex flex-col" ref={messagesContainerRef} onScroll={handleScroll}>
-          <WelcomeScreen
-            onQueryClick={handleQueryClick}
-            onVoiceClick={handleVoiceToggle}
-            onTextSend={handleTextSend}
-            isRecording={isRecording}
-            isTranscribing={isTranscribing}
-            isBusy={isBusy}
-          />
-        </div>
-      </div>
-    );
-  }
+  const [chatExpanded, setChatExpanded] = React.useState(false);
 
   return (
-    <div className="flex flex-col flex-1 h-full overflow-hidden" id="chat-window">
-      {/* Messages scroll area */}
-      <div
-        className="flex-1 overflow-y-auto overflow-x-hidden flex flex-col"
-        id="chat-messages"
-        ref={messagesContainerRef}
-        onScroll={handleScroll}
-      >
-        {/* Responsive padding: tight on mobile, comfortable on desktop */}
-        <div className="flex-1 flex flex-col py-4 px-3 sm:py-6 sm:px-5 md:px-6 gap-1.5 sm:gap-2 max-w-[900px] w-full mx-auto">
-          {messages.map((msg) => (
-            <MessageBubble
-              key={msg.id}
-              message={msg}
-              onRetry={msg.isError ? () => handleRetry(msg.id, 'retry') : null}
-              onRegenerate={
-                msg.role === 'assistant' && !msg.isError
-                  ? () => handleRetry(msg.id, 'regenerate')
-                  : null
-              }
-              onEdit={msg.role === 'user' ? handleEditMessage : null}
-            />
-          ))}
-
-          {isStreaming && streamingText && (
-            <MessageBubble
-              message={{ id: 'streaming', role: 'assistant', content: streamingText, type: 'text', createdAt: Date.now() }}
-              isStreaming
-            />
-          )}
-
-          {isLoading && !isStreaming && <TypingIndicator />}
-          <div ref={messagesEndRef} />
-        </div>
+    <div className="flex flex-col flex-1 h-full overflow-hidden bg-[var(--db-bg-base)]" id="chat-window">
+      {/* ── DASHBOARD AREA (Primary) ── */}
+      <div className="flex-1 overflow-y-auto px-6 py-4 scroll-smooth hide-scrollbar relative">
+        {currentDashboardData ? (
+          <Dashboard data={currentDashboardData} />
+        ) : (
+          <div className="flex items-center justify-center h-full opacity-50">
+            <div className="text-center">
+              <div className="transcribing-loader w-12 h-12 mx-auto mb-4">
+                <div className="orbit-ring"></div>
+                <div className="orbit-dot"></div>
+              </div>
+              <p className="text-gold-gradient text-sm font-medium">Initializing Dashboard...</p>
+            </div>
+          </div>
+        )}
+        <div ref={messagesEndRef} />
       </div>
 
-      {/* Input bar — safe-area aware, responsive padding */}
+      {/* ── CHAT OVERLAY (Optional/Collapsible) ── */}
+      {hasMessages && (
+        <div className={`absolute bottom-[100px] left-1/2 -translate-x-1/2 w-full max-w-[800px] px-4 transition-all duration-300 z-20 ${chatExpanded ? 'h-[400px]' : 'h-auto'}`}>
+          <div className="glass-dark border border-[var(--db-border)] rounded-2xl shadow-2xl overflow-hidden flex flex-col">
+            <div className="px-4 py-2 flex items-center justify-between border-bottom border-[var(--db-border)] bg-[var(--db-bg-card)]">
+               <span className="text-[10px] font-bold uppercase tracking-widest text-[var(--db-text-muted)]">Insights & Conversation</span>
+               <button onClick={() => setChatExpanded(!chatExpanded)} className="text-[var(--db-text-muted)] hover:text-white transition-colors">
+                 {chatExpanded ? '▼' : '▲'}
+               </button>
+            </div>
+            <div className={`overflow-y-auto p-4 space-y-4 ${chatExpanded ? 'flex-1' : 'max-h-[120px]'}`}>
+              {messages.filter(m => !m.content.includes('```dashboard')).map((msg) => (
+                <MessageBubble
+                  key={msg.id}
+                  message={msg}
+                  onRetry={msg.isError ? () => handleRetry(msg.id, 'retry') : null}
+                  onEdit={msg.role === 'user' ? handleEditMessage : null}
+                />
+              ))}
+              {isStreaming && streamingText && !streamingText.includes('```dashboard') && (
+                <MessageBubble
+                  message={{ id: 'streaming', role: 'assistant', content: streamingText, type: 'text', createdAt: Date.now() }}
+                  isStreaming
+                />
+              )}
+              {isLoading && !isStreaming && <TypingIndicator />}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── INPUT AREA (Fixed at Bottom) ── */}
       <div
         className="
-          flex-shrink-0 bg-transparent flex flex-col items-center gap-2 w-full z-10
-          px-3 sm:px-4
-          pb-[calc(12px+env(safe-area-inset-bottom,0px))] sm:pb-4
+          flex-shrink-0 bg-[var(--db-bg-base)] flex flex-col items-center gap-2 w-full z-30
+          px-4 pb-[calc(16px+env(safe-area-inset-bottom,0px))] pt-2
+          border-t border-[var(--db-border)]
         "
         id="chat-input-area"
       >
-        {(isStreaming || isLoading) && (
-          <button
-            className="
-              inline-flex items-center gap-1.5 sm:gap-2
-              px-3 sm:px-4 py-1 sm:py-1.5 rounded-full
-              bg-[var(--surf)] border border-[var(--brd)] text-[var(--txt2)]
-              text-[0.7rem] sm:text-xs cursor-pointer
-              hover:border-red-500/50 hover:text-red-400 hover:bg-red-500/5
-              transition-all duration-150 animate-fade-in
-            "
-            onClick={handleCancelStream}
-            id="cancel-stream-btn"
-          >
-            Stop generating
-            <span className="hidden sm:inline">·</span>
-            <kbd className="hidden sm:inline bg-[var(--surf-hover)] px-1.5 py-0.5 rounded text-xs border border-[var(--brd2)] font-sans">
-              Esc
-            </kbd>
-          </button>
-        )}
-
-        {/* Input pill — full width on mobile, capped on desktop */}
         <div
           className={`
-            chat-input-row max-w-[760px] w-full flex items-center gap-1.5 sm:gap-2 relative
-            glass-surface border border-[var(--brd2)] rounded-full
-            px-2 sm:px-2.5 py-1.5 pl-2.5 sm:pl-3
-            shadow-[0_4px_16px_rgba(0,0,0,0.3)] transition-all duration-150
-            gradient-border-focus
-            ${isRecording ? "recording-pill" : ""}
+            chat-input-row max-w-[760px] w-full flex items-center gap-2 relative
+            bg-[var(--db-bg-card)] border border-[var(--db-border)] rounded-full
+            px-3 py-2 shadow-2xl transition-all duration-150
+            ${isRecording ? "recording-pill ring-2 ring-red-500/50" : ""}
           `}
         >
           <VoiceButton onRecordComplete={handleVoiceToggle} disabled={isLoading || isStreaming} />
-          <TextInput onSend={handleTextSend} disabled={isBusy} />
+          <TextInput onSend={handleTextSend} disabled={isBusy} placeholder="Ask about production, forecasts, or alerts..." />
         </div>
-
-        <p className="hidden md:block text-[11px] text-[var(--txt3)] opacity-60 text-center">
-          Press Enter to send · Shift+Enter for new line
-        </p>
       </div>
     </div>
   );

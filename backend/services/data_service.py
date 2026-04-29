@@ -33,32 +33,42 @@ class DataService:
             models_path = self.data_dir / "Sales by Models.xlsx"
             if models_path.exists():
                 df_models = pd.read_excel(models_path, engine="openpyxl")
-                # Clean column names: cast to string, strip whitespace, lowercase, replace spaces with underscores
-                df_models.columns = [
-                    str(col).strip().lower().replace(" ", "_").replace("(", "").replace(")", "")
-                    for col in df_models.columns
-                ]
+                df_models.columns = [str(col).strip().lower().replace(" ", "_") for col in df_models.columns]
                 self.conn.execute("DROP TABLE IF EXISTS sales_by_models")
                 self.conn.execute("CREATE TABLE sales_by_models AS SELECT * FROM df_models")
-                row_count = self.conn.execute("SELECT COUNT(*) FROM sales_by_models").fetchone()[0]
-                logger.info(f"Loaded sales_by_models: {row_count} rows")
-            else:
-                logger.warning(f"File not found: {models_path}")
+                logger.info("Loaded sales_by_models")
 
             # ── Load Sales by Plant ──
             plant_path = self.data_dir / "Sales by Plant.xlsx"
             if plant_path.exists():
                 df_plant = pd.read_excel(plant_path, engine="openpyxl")
-                df_plant.columns = [
-                    str(col).strip().lower().replace(" ", "_").replace("(", "").replace(")", "")
-                    for col in df_plant.columns
-                ]
+                df_plant.columns = [str(col).strip().lower().replace(" ", "_") for col in df_plant.columns]
                 self.conn.execute("DROP TABLE IF EXISTS sales_by_plant")
                 self.conn.execute("CREATE TABLE sales_by_plant AS SELECT * FROM df_plant")
-                row_count = self.conn.execute("SELECT COUNT(*) FROM sales_by_plant").fetchone()[0]
-                logger.info(f"Loaded sales_by_plant: {row_count} rows")
-            else:
-                logger.warning(f"File not found: {plant_path}")
+                logger.info("Loaded sales_by_plant")
+
+            # ── Load Automotive CSVs ──
+            csv_files = [
+                ("production_data", "production_data.csv"),
+                ("alerts_quality", "alerts_quality.csv"),
+                ("tasks_schedule", "tasks_schedule.csv"),
+                ("forecast_data", "forecast_data.csv"),
+            ]
+
+            for table_name, file_name in csv_files:
+                path = self.data_dir / file_name
+                if path.exists():
+                    # Read with pandas first to ensure we can clean columns if needed
+                    df = pd.read_csv(path)
+                    # Clean column names: strip whitespace
+                    df.columns = [str(c).strip() for c in df.columns]
+                    
+                    self.conn.execute(f"DROP TABLE IF EXISTS {table_name}")
+                    self.conn.execute(f"CREATE TABLE {table_name} AS SELECT * FROM df")
+                    count = self.conn.execute(f"SELECT COUNT(*) FROM {table_name}").fetchone()[0]
+                    logger.info(f"Loaded {table_name}: {count} rows")
+                else:
+                    logger.warning(f"CSV file not found: {path}")
 
             self._loaded = True
             logger.info("Data service initialized successfully")
