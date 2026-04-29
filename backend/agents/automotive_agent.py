@@ -9,6 +9,7 @@ This is the brain of the assistant. It:
 4. Generates rich markdown responses with tables, summaries, and insights
 """
 
+import json
 import logging
 import re
 from typing import AsyncGenerator, Dict, Any
@@ -107,6 +108,14 @@ AGGREGATION_SYNONYMS = {
     "difference": "change",
 }
 
+AGGREGATION_MAP = {
+    "avg": "AVG",
+    "sum": "SUM",
+    "count": "COUNT",
+    "max": "MAX",
+    "min": "MIN",
+}
+
 GROUP_BY_SYNONYMS = {
     "plant": "plant",
     "department": "department",
@@ -117,6 +126,12 @@ GROUP_BY_SYNONYMS = {
     "quarter": "quarter",
     "month": "month",
     "date": "date",
+}
+
+DATE_COLUMNS = {
+    "production_data": "date",
+    "alerts_quality": "date",
+    "forecast_data": "date",
 }
 
 TIME_KEYWORDS = {
@@ -171,6 +186,28 @@ def _normalize_text(query: str) -> str:
     return re.sub(r"[^a-z0-9\s-]", " ", query.lower())
 
 
+def _parse_group_by(query: str) -> str | list[str] | None:
+    query_lower = query.lower()
+    group_columns = []
+    for phrase, col in GROUP_BY_SYNONYMS.items():
+        if phrase in query_lower:
+            group_columns.append(col)
+    if not group_columns:
+        return None
+    if len(group_columns) == 1:
+        return group_columns[0]
+    return group_columns
+
+
+def _is_per_day_query(query: str) -> bool:
+    query_lower = query.lower()
+    return any(k in query_lower for k in ["per day", "daily average", "average per day"])
+
+
+def _get_date_column(table_name: str) -> str:
+    return DATE_COLUMNS.get(table_name, "date")
+
+
 def _parse_time_range(query: str) -> dict | None:
     query_lower = query.lower()
     now = datetime.now()
@@ -221,6 +258,17 @@ def _parse_time_range(query: str) -> dict | None:
     return None
 
 
+def classify_query_type(query: str) -> str:
+    query_lower = query.lower()
+    if any(token in query_lower for token in ["why", "cause", "because", "reason", "how come"]):
+        return "diagnostic"
+    if any(token in query_lower for token in ["compare", "versus", " vs ", "difference", "better", "worse"]):
+        return "comparative"
+    if any(token in query_lower for token in ["show", "list", "display", "what are", "which are", "give me"]):
+        return "listing"
+    return "analytical"
+
+
 def _parse_filters(query: str, table_name: str) -> dict:
     query_lower = query.lower()
     filters = {}
@@ -246,16 +294,26 @@ def _choose_time_clause(table_name: str, time_range: dict | None) -> tuple[str |
     if time_range is None:
         return None, {"used": None, "requested": None}
 
+    date_col = _get_date_column(table_name)
     expr = None
     requested = time_range.get("requested")
     if time_range["type"] == "month":
-        expr = f"EXTRACT(month FROM CAST(date AS DATE)) = {time_range['month']} AND EXTRACT(year FROM CAST(date AS DATE)) = {time_range['year']}"
+        expr = (
+            f"EXTRACT(month FROM CAST({date_col} AS DATE)) = {time_range['month']} AND "
+            f"EXTRACT(year FROM CAST({date_col} AS DATE)) = {time_range['year']}"
+        )
     elif time_range["type"] == "quarter":
-        expr = f"LOWER(quarter) = 'q{time_range['quarter']}' AND EXTRACT(year FROM CAST(date AS DATE)) = {time_range['year']}"
+        expr = (
+            f"LOWER(quarter) = 'q{time_range['quarter']}' AND "
+            f"EXTRACT(year FROM CAST({date_col} AS DATE)) = {time_range['year']}"
+        )
     elif time_range["type"] == "week":
-        expr = f"LOWER(week) = 'w{time_range['week']:02d}' AND EXTRACT(year FROM CAST(date AS DATE)) = {time_range['year']}"
+        expr = (
+            f"LOWER(week) = 'w{time_range['week']:02d}' AND "
+            f"EXTRACT(year FROM CAST({date_col} AS DATE)) = {time_range['year']}"
+        )
     elif time_range["type"] == "year":
-        expr = f"EXTRACT(year FROM CAST(date AS DATE)) = {time_range['year']}"
+        expr = f"EXTRACT(year FROM CAST({date_col} AS DATE)) = {time_range['year']}"
     else:
         return None, {"used": requested, "requested": requested}
 
@@ -265,7 +323,7 @@ def _choose_time_clause(table_name: str, time_range: dict | None) -> tuple[str |
     if row_count > 0:
         return expr, {"used": requested, "requested": requested, "available_rows": int(row_count)}
 
-    latest_sql = f"SELECT MAX(CAST(date AS DATE)) AS latest_date FROM {table_name}"
+    latest_sql = f"SELECT MAX(CAST({date_col} AS DATE)) AS latest_date FROM {table_name}"
     latest_row = data_svc.execute_query(latest_sql)
     if latest_row.empty or latest_row.iloc[0, 0] is None:
         return expr, {"used": requested, "requested": requested, "available_rows": 0}
@@ -274,8 +332,19 @@ def _choose_time_clause(table_name: str, time_range: dict | None) -> tuple[str |
     used_month = int(latest_date.strftime("%m"))
     used_year = int(latest_date.strftime("%Y"))
     used = latest_date.strftime("%B %Y")
-    fallback_expr = f"EXTRACT(month FROM CAST(date AS DATE)) = {used_month} AND EXTRACT(year FROM CAST(date AS DATE)) = {used_year}"
-    return fallback_expr, {"requested": requested, "used": used, "available_rows": int(data_svc.execute_query(f"SELECT COUNT(*) AS cnt FROM {table_name} WHERE {fallback_expr}").iloc[0, 0])}
+    fallback_expr = (
+        f"EXTRACT(month FROM CAST({date_col} AS DATE)) = {used_month} AND "
+        f"EXTRACT(year FROM CAST({date_col} AS DATE)) = {used_year}"
+    )
+    return fallback_expr, {
+        "requested": requested,
+        "used": used,
+        "available_rows": int(
+            data_svc.execute_query(
+                f"SELECT COUNT(*) AS cnt FROM {table_name} WHERE {fallback_expr}"
+            ).iloc[0, 0]
+        ),
+    }
 
 
 def _choose_table(metric: str) -> str:
@@ -291,7 +360,7 @@ def _parse_structured_intent(query: str) -> dict | None:
     raw = _normalize_text(query_lower)
     metric = None
     aggregation = None
-    group_by = None
+    group_by = _parse_group_by(query)
 
     for phrase, field in METRIC_SYNONYMS.items():
         if phrase in query_lower:
@@ -301,11 +370,6 @@ def _parse_structured_intent(query: str) -> dict | None:
     for phrase, agg in AGGREGATION_SYNONYMS.items():
         if phrase in query_lower:
             aggregation = agg
-            break
-
-    for phrase, group in GROUP_BY_SYNONYMS.items():
-        if phrase in query_lower:
-            group_by = group
             break
 
     if metric is None:
@@ -331,6 +395,9 @@ def _parse_structured_intent(query: str) -> dict | None:
     if metric is None or aggregation is None:
         return None
 
+    if aggregation not in AGGREGATION_MAP:
+        return None
+
     table_name = _choose_table(metric)
     filters = _parse_filters(query_lower, table_name)
     time_range = _parse_time_range(query)
@@ -341,48 +408,84 @@ def _parse_structured_intent(query: str) -> dict | None:
         "filters": filters,
         "time_range": time_range,
         "table_name": table_name,
+        "raw_query": query,
+        "query_type": classify_query_type(query),
     }
 
 
-def _build_sql_for_intent(intent: dict) -> tuple[str, dict] | None:
+def _build_sql_for_intent(intent: dict) -> tuple[str, dict, str] | None:
     metric = intent["metric"]
     aggregation = intent["aggregation"]
     group_by = intent["group_by"]
     filters = intent["filters"]
     table_name = intent["table_name"]
+    raw_query = intent.get("raw_query", "")
 
     select_clauses = []
     group_clause = ""
+    order_clause = ""
     where_clauses = []
 
     if metric == "alerts":
-        metric_expr = "COUNT(*)"
-        col_label = "issue_count"
+        metric_expr = "affected_units"
+        col_label = "affected_units"
     elif metric == "affected_units":
-        metric_expr = "SUM(affected_units)"
+        metric_expr = "affected_units"
         col_label = "affected_units"
     else:
         metric_expr = metric
         col_label = metric
 
-    if aggregation == "avg" and metric not in {"alerts", "count"}:
+    derived_per_day = aggregation == "avg" and _is_per_day_query(raw_query)
+    alias = None
+
+    if metric == "alerts":
+        if aggregation == "count":
+            select_clauses.append("COUNT(*) AS total_issue_count")
+            alias = "total_issue_count"
+        elif aggregation == "avg":
+            select_clauses.append("ROUND(AVG(affected_units), 2) AS average_affected_units")
+            alias = "average_affected_units"
+        elif aggregation == "sum":
+            select_clauses.append("SUM(affected_units) AS total_affected_units")
+            alias = "total_affected_units"
+        else:
+            select_clauses.append("COUNT(*) AS total_issue_count")
+            alias = "total_issue_count"
+    elif aggregation == "avg" and derived_per_day:
         select_clauses.append(f"SUM({metric_expr}) AS total_{col_label}")
-        select_clauses.append("COUNT(DISTINCT CAST(date AS DATE)) AS record_days")
-        select_clauses.append(f"ROUND(SUM({metric_expr}) / NULLIF(COUNT(DISTINCT CAST(date AS DATE)), 0), 2) AS average_{col_label}")
+        select_clauses.append(f"COUNT(DISTINCT CAST({_get_date_column(table_name)} AS DATE)) AS record_days")
+        select_clauses.append(f"ROUND(SUM({metric_expr}) / NULLIF(COUNT(DISTINCT CAST({_get_date_column(table_name)} AS DATE)), 0), 2) AS average_{col_label}")
+        alias = f"average_{col_label}"
+    elif aggregation == "avg":
+        select_clauses.append(f"ROUND(AVG({metric_expr}), 2) AS average_{col_label}")
+        alias = f"average_{col_label}"
     elif aggregation == "sum":
         select_clauses.append(f"SUM({metric_expr}) AS total_{col_label}")
-    elif aggregation == "count" or metric == "alerts":
+        alias = f"total_{col_label}"
+    elif aggregation == "count":
         select_clauses.append(f"COUNT(*) AS total_{col_label}")
+        alias = f"total_{col_label}"
     elif aggregation == "max":
         select_clauses.append(f"MAX({metric_expr}) AS max_{col_label}")
+        alias = f"max_{col_label}"
     elif aggregation == "min":
         select_clauses.append(f"MIN({metric_expr}) AS min_{col_label}")
+        alias = f"min_{col_label}"
     else:
         select_clauses.append(f"SUM({metric_expr}) AS total_{col_label}")
+        alias = f"total_{col_label}"
 
-    if group_by and group_by != "date":
-        select_clauses.insert(0, group_by)
-        group_clause = f"GROUP BY {group_by} ORDER BY {group_by}"
+    group_key = None
+    if group_by:
+        if isinstance(group_by, list):
+            group_key = ", ".join(group_by)
+            select_clauses = group_by + select_clauses
+            group_clause = f"GROUP BY {group_key}"
+        else:
+            group_key = group_by
+            select_clauses.insert(0, group_by)
+            group_clause = f"GROUP BY {group_by}"
 
     if filters:
         for key, value in filters.items():
@@ -393,35 +496,106 @@ def _build_sql_for_intent(intent: dict) -> tuple[str, dict] | None:
     if time_expr:
         where_clauses.append(time_expr)
 
+    if aggregation in {"sum", "max"} and alias is not None and group_by:
+        order_clause = f"ORDER BY {alias} DESC LIMIT 5"
+    elif group_clause and not order_clause and group_key:
+        order_clause = f"ORDER BY {group_key}"
+
     where_clause = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
-    sql = f"SELECT {', '.join(select_clauses)} FROM {table_name} {where_clause} {group_clause}".strip()
-    return sql, time_meta
+    sql = f"SELECT {', '.join(select_clauses)} FROM {table_name} {where_clause} {group_clause} {order_clause}".strip()
+    return sql, time_meta, where_clause
 
 
-def _build_result_context(df, sql: str, time_meta: dict, intent: dict) -> str:
-    rows = []
+def _build_structured_context(intent: dict, df, sql: str, time_meta: dict, row_count: int) -> str:
+    value = None
     if df is not None and not df.empty:
-        rows.append(f"SQL: {sql}")
-        rows.append(f"Requested time: {time_meta.get('requested') or 'N/A'}")
-        rows.append(f"Used time: {time_meta.get('used') or time_meta.get('requested') or 'N/A'}")
-        rows.append(f"Available rows in selected range: {time_meta.get('available_rows', 'N/A')}")
-        rows.append("")
-        rows.append("### Results")
-        rows.append(df.to_markdown(index=False))
-    else:
-        rows.append(f"SQL: {sql}")
-        rows.append("### Results")
-        rows.append("No data found for the selected criteria.")
-    return "\n".join(rows)
+        if df.shape[0] == 1 and df.shape[1] >= 1:
+            value = df.iloc[0, -1]
+    summary = {}
+    trend_label = None
+    if df is not None and not df.empty:
+        if "total_units" in df.columns:
+            summary["total_units"] = int(df.iloc[0]["total_units"])
+        if "record_days" in df.columns:
+            summary["days"] = int(df.iloc[0]["record_days"])
+        if "average_units" in df.columns:
+            summary["average_units"] = float(df.iloc[0]["average_units"])
+        if "average_affected_units" in df.columns:
+            summary["average_affected_units"] = float(df.iloc[0]["average_affected_units"])
+        if "max_units" in df.columns:
+            summary["max_units"] = float(df.iloc[0]["max_units"])
+
+        if df.shape[0] > 1 and "total_units" in df.columns:
+            first = df.iloc[0]["total_units"]
+            last = df.iloc[-1]["total_units"]
+            if last > first:
+                trend_label = "increasing"
+            elif last < first:
+                trend_label = "decreasing"
+            else:
+                trend_label = "flat"
+
+    if trend_label:
+        summary["trend"] = trend_label
+
+    structured = {
+        "metric": intent["metric"],
+        "aggregation": intent["aggregation"],
+        "group_by": intent["group_by"],
+        "query_type": intent.get("query_type", "analytical"),
+        "time_range": time_meta.get("used") or time_meta.get("requested"),
+        "confidence": "high" if row_count > 0 else "low",
+        "notes": f"Based on {row_count} record(s) in the selected time range.",
+        "sql": sql,
+        "value": value,
+        "summary": summary,
+        "results": df.to_dict(orient="records") if df is not None else [],
+    }
+    return json.dumps(structured, indent=2)
 
 
-def _execute_structured_intent(intent: dict) -> tuple[str, dict] | None:
+def _execute_structured_intent(intent: dict) -> dict:
     data_svc = get_data_service()
-    sql, time_meta = _build_sql_for_intent(intent)
+    sql, time_meta, where_clause = _build_sql_for_intent(intent)
+    if sql is None:
+        return {"status": "UNSUPPORTED"}
+
+    row_count = data_svc.execute_query(f"SELECT COUNT(*) AS cnt FROM {intent['table_name']} {where_clause}").iloc[0, 0]
+    if row_count == 0:
+        logger.info({
+            "query": intent["raw_query"],
+            "intent": intent,
+            "sql": sql,
+            "status": "NO_DATA",
+            "row_count": int(row_count),
+        })
+        return {
+            "status": "NO_DATA",
+            "message": (
+                f"No data found for {time_meta.get('requested', 'the requested time range')}. "
+                f"Showing latest available data: {time_meta.get('used', 'unknown')}"
+            ),
+            "sql": sql,
+            "time_meta": time_meta,
+            "row_count": int(row_count),
+        }
+
     df = data_svc.execute_query(sql)
-    if df.empty and time_meta.get("available_rows", 0) == 0:
-        return None
-    return _build_result_context(df, sql, time_meta, intent), {"intent": intent, "results": df, "time_meta": time_meta}
+    logger.info({
+        "query": intent["raw_query"],
+        "intent": intent,
+        "sql": sql,
+        "status": "OK",
+        "row_count": int(row_count),
+    })
+    return {
+        "status": "OK",
+        "sql": sql,
+        "time_meta": time_meta,
+        "row_count": int(row_count),
+        "structured_context": _build_structured_context(intent, df, sql, time_meta, int(row_count)),
+        "results_df": df,
+    }
 
 
 def detect_structured_query(query: str) -> str | None:
@@ -476,20 +650,24 @@ def execute_structured_query(query: str) -> str | None:
     if structured_intent is None:
         return None
 
-    result_context, result_meta = _execute_structured_intent(structured_intent)
-    if result_context is None:
+    execution = _execute_structured_intent(structured_intent)
+    if execution["status"] == "NO_DATA":
+        return (
+            f"SUMMARY No records were found for {execution['time_meta'].get('requested', 'the requested time range')}. "
+            "The dataset does not contain any matching rows for that selection."
+        )
+    if execution["status"] != "OK":
         return None
 
-    # Use LLM only to explain the already computed result.
     data_context = build_data_context(
         intent=detect_intent(query),
         query=query,
-        computed_results=result_context,
+        computed_results=execution["structured_context"],
         signals=compute_cross_dataset_signals(),
     )
     return llm_service.generate_explanation(
         user_query=query,
-        result_context=result_context,
+        result_context=execution["structured_context"],
         data_context=data_context,
     )
 
@@ -513,18 +691,20 @@ def compute_cross_dataset_signals() -> dict:
     except Exception:
         return signals
 
-    if production.empty or alerts.empty:
+    if production.empty or alerts.empty or len(production) < 4 or len(alerts) < 4:
         return signals
 
     latest_prod = production.iloc[-1]
-    prev_prod = production.iloc[-2] if len(production) > 1 else None
     latest_alert = alerts.iloc[-1]
-    prev_alert = alerts.iloc[-2] if len(alerts) > 1 else None
+    recent_prod = production.tail(3)["total_units"].mean()
+    prior_prod = production.head(3)["total_units"].mean() if len(production) >= 6 else production.iloc[:3]["total_units"].mean()
+    recent_alert = alerts.tail(3)["issue_count"].mean()
+    prior_alert = alerts.iloc[-6:-3]["issue_count"].mean() if len(alerts) >= 6 else alerts.iloc[:3]["issue_count"].mean()
 
-    if prev_alert is not None and prev_alert["issue_count"] > 0:
-        signals["alerts_spike"] = latest_alert["issue_count"] >= prev_alert["issue_count"] * 1.2
-    if prev_prod is not None and prev_prod["total_units"] > 0:
-        signals["production_drop"] = latest_prod["total_units"] <= prev_prod["total_units"] * 0.9
+    if prior_alert > 0:
+        signals["alerts_spike"] = recent_alert >= prior_alert * 1.2
+    if prior_prod > 0:
+        signals["production_drop"] = recent_prod <= prior_prod * 0.9
 
     dept_rows = data_svc.execute_query(
         "SELECT department, SUM(CASE WHEN LOWER(status) = 'active' THEN 1 ELSE 0 END) AS active_issues "
