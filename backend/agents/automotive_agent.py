@@ -134,22 +134,22 @@ def build_data_context(intent: str, query: str) -> str:
 """)
         elif intent == "quarter_comparison":
             context_parts.append("""
-### Response Instructions:
-- Create a comparison TABLE showing current quarter vs previous quarter
-- Include metrics: Total Sales, Revenue, Units Produced, Top Model, Growth %
-- Calculate percentage changes between quarters
-- Highlight positive/negative trends with ↑/↓ arrows
-- Add a brief analysis of what drove the changes
-""")
+                    ### Response Instructions:
+                    - Create a comparison TABLE showing current quarter vs previous quarter
+                    - Include metrics: Total Sales, Revenue, Units Produced, Top Model, Growth %
+                    - Calculate percentage changes between quarters
+                    - Highlight positive/negative trends with ↑/↓ arrows
+                    - Add a brief analysis of what drove the changes
+                    """)
         elif intent == "week_broadcast":
             context_parts.append("""
-### Response Instructions:
-- Create a week-over-week comparison TABLE
-- Show next week's projected data vs previous week's actual data
-- Include: Production targets, Sales forecast, Key models, any alerts
-- Highlight significant changes (>10% variance)
-- Add broadcast-style announcements for the plant floor
-""")
+                    ### Response Instructions:
+                    - Create a week-over-week comparison TABLE
+                    - Show next week's projected data vs previous week's actual data
+                    - Include: Production targets, Sales forecast, Key models, any alerts
+                    - Highlight significant changes (>10% variance)
+                    - Add broadcast-style announcements for the plant floor
+                    """)
 
     except Exception as e:
         logger.error(f"Error building data context: {e}")
